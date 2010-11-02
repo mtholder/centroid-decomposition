@@ -14,13 +14,15 @@ std::string gErrMsgPrefix("centroid_decomp: ");
 MultiFormatReader * gNexusReader = 0L;
 bool gTaxaBlockWritten = false;
 int gCurrTreeIndex = 0;
+NxsString gErrorMessage;
+NxsSimpleNode bogusNode(0L, 0.0);
+unsigned gNumLeaves = 0;
 
 // user-controlled options as global variables...
 bool gVerbose = false;
 long gLeafSetIntersectionSize = 50;
 long gMaxSubProblemSize = 250;
 bool gUseEdgeLengths = false;
-
 
 
 std::ostream * outputStream = &(std::cout);
@@ -35,12 +37,50 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
             taxa->WriteAsNexus(*outputStream);
         }
         gTaxaBlockWritten = true;
+        gNumLeaves = taxa->GetNTax();
+        if (gNumLeaves < gLeafSetIntersectionSize) {
+            gErrorMessage << "LeafSetIntersectionSize = " << gLeafSetIntersectionSize << ", but there are only " << gNumLeaves << " leaves in the input file." ;
+            throw NxsException(gErrorMessage);
+        }
     }
     if (ftd.HasPolytomies()) {
-        NxsString err;
-        err << "Tree # " << gCurrTreeIndex + 1 << " contains a polytomy!";
-        throw NxsException(err);
+        gErrorMessage << "Tree # " << gCurrTreeIndex + 1 << " contains a polytomy!";
+        throw NxsException(gErrorMessage);
     }
+    if (gUseEdgeLengths && !ftd.AllEdgesHaveLengths()) {
+        gErrorMessage << "The use EDGE_LENGTHS option is in effect, but tree " << gCurrTreeIndex + 1 << " contains edges without lengths!";
+        throw NxsException(gErrorMessage);
+    }
+    if (ftd.HasDegreeTwoNodes()) {
+        gErrorMessage << "Tree " << gCurrTreeIndex + 1 << " has nodes of outdegree 1!";
+        throw NxsException(gErrorMessage);
+    }
+    
+
+
+    NxsSimpleTree t(ftd, 0, 0.0);
+    NxsSimpleNode * iniRoot = const_cast<NxsSimpleNode *>(t.GetRootConst());
+    NxsSimpleNode * toDelNd = 0L;
+    std::vector<NxsSimpleNode *> rootChildren = iniRoot->GetChildren();
+    const NxsSimpleNode * root = iniRoot;
+    if (rootChildren.size() != 2) {
+        if (rootChildren.size() < 2) {
+            gErrorMessage << "The root of tree " << gCurrTreeIndex + 1 << " has fewer than 2 children!";
+            throw NxsException(gErrorMessage);
+        }
+        NxsSimpleNode * rlc = rootChildren.at(0);
+        iniRoot->RemoveChild(rlc);
+        bogusNode.AddChild(rlc);
+        bogusNode.AddChild(iniRoot);
+        root = & bogusNode;
+    }
+    
+
+    std::vector<NxsSimpleNode *> bogusChildren = bogusNode.GetChildren();
+    for (std::vector<NxsSimpleNode *>::iterator cIt = bogusChildren.begin(); cIt != bogusChildren.end(); ++cIt) {
+        bogusNode.RemoveChild(*cIt);
+    }
+
     gCurrTreeIndex++;
     return false;
 }
