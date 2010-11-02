@@ -1,17 +1,78 @@
 #include "ncl/nxsmultiformat.h"
+#include <cassert>
 #include <iostream>
 #include <fstream>
 #include <string>
 
 
 void printHelp(std::ostream & out);
+bool treeReadCallback(NxsFullTreeDescription &, void *, NxsTreesBlock *);
 
-
-bool gVerbose = false;
+// some globals
 std::string gVersionString("centroid_decomp version 0.0.1");
 std::string gErrMsgPrefix("centroid_decomp: ");
+MultiFormatReader * gNexusReader = 0L;
+bool gTaxaBlockWritten = false;
+int gCurrTreeIndex = 0;
+
+// user-controlled options as global variables...
+bool gVerbose = false;
+long gLeafSetIntersectionSize = 50;
+long gMaxSubProblemSize = 250;
+bool gUseEdgeLengths = false;
 
 
+
+std::ostream * outputStream = &(std::cout);
+
+bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *treesBlock) {
+    assert(treesBlock != 0L);
+    assert(outputStream != 0L);
+    if (!gTaxaBlockWritten) {
+        NxsTaxaBlock * taxa = (NxsTaxaBlock *)treesBlock->GetTaxaBlockPtr();
+        *outputStream << "#NEXUS\n";
+        if (taxa != 0L) {
+            taxa->WriteAsNexus(*outputStream);
+        }
+        gTaxaBlockWritten = true;
+    }
+    if (ftd.HasPolytomies()) {
+        NxsString err;
+        err << "Tree # " << gCurrTreeIndex + 1 << " contains a polytomy!";
+        throw NxsException(err);
+    }
+    gCurrTreeIndex++;
+    return false;
+}
+
+
+int readInput(std::istream &inp, MultiFormatReader::DataFormatType fmt, const std::string & filename) {
+    assert(gNexusReader == 0L);
+    int blockFlag = PublicNexusReader::NEXUS_TAXA_BLOCK_BIT | PublicNexusReader::NEXUS_TREES_BLOCK_BIT;
+	gNexusReader = new MultiFormatReader(blockFlag, NxsReader::WARNINGS_TO_STDERR);
+	if (!gVerbose)
+		gNexusReader->SetWarningOutputLevel(NxsReader::SKIPPING_CONTENT_WARNING);
+	NxsTreesBlock * treesB = gNexusReader->GetTreesBlockTemplate();
+	assert(treesB);
+	treesB->SetAllowImplicitNames(true);
+    treesB->setValidationCallbacks(treeReadCallback, 0L);
+    treesB->SetTreatAsRootedByDefault(false);
+    try {
+        gNexusReader->ReadStream(inp, fmt, filename.c_str());
+    }
+    catch (NxsException & x) {
+		std::cerr << "Error:\n " << x.msg << std::endl;
+		std::cerr << "File: \"" << filename << '\"' << std::endl;
+		if (x.line > 0 || x.pos > 0)
+			std::cerr << "At line " << x.line << ", column (approximately) " << x.col << " (and file position "<< x.pos << ")" << std::endl;
+		return 14;
+    }
+    catch (...) {
+        std::cerr << gErrMsgPrefix << "Unknown exception generated when reading \"" << filename << '\"' << std::endl;
+		return 15;
+    }
+    return 0;
+}
 
 void printHelp(std::ostream & out)
 	{
@@ -50,9 +111,6 @@ int main(int argc, char * argv[]) {
 	NxsReader::setNCLCatchesSignals(true);
 	MultiFormatReader::DataFormatType f(MultiFormatReader::NEXUS_FORMAT);
     std::string formatName("NEXUS");
-    long leafSetIntersectionSize = 50;
-    long maxSubProblemSize = 250;
-    bool useEdgeLengths = false;
     
 	for (int i = 1; i < argc; ++i) {
 		const char * filepath = argv[i];
@@ -66,15 +124,15 @@ int main(int argc, char * argv[]) {
 		else if (filepath[1] == 'v')
 			gVerbose = true;
 		else if (filepath[1] == 'e')
-			useEdgeLengths = true;
+			gUseEdgeLengths = true;
         else if (filepath[1] == 'i') {
-			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &leafSetIntersectionSize))) {
+			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gLeafSetIntersectionSize))) {
 				std::cerr << gErrMsgPrefix << "Expecting an integer -i\n" << std::endl;
 				return 3;
 			}
 		}
         else if (filepath[1] == 'm') {
-			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &maxSubProblemSize))) {
+			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gMaxSubProblemSize))) {
 				std::cerr << gErrMsgPrefix << "Expecting an integer -m\n" << std::endl;
 				return 4;
 			}
@@ -107,18 +165,18 @@ int main(int argc, char * argv[]) {
 		}
 	}
 
-    if (leafSetIntersectionSize < 4) {
+    if (gLeafSetIntersectionSize < 4) {
         std::cerr << gErrMsgPrefix << "Minimum size of the leaf intersection set must 4" << std::endl;
         return 6;
     }
-    if (maxSubProblemSize < leafSetIntersectionSize + 3) {
+    if (gMaxSubProblemSize < gLeafSetIntersectionSize + 3) {
         std::cerr << "Max Sub problem size must be at least 3 larger that the minimum size of the leaf intersection set" << std::endl;
         return 7;
     }
 
 
 	bool filefound = false;
-	std::string filename;
+	std::string filename("<standard input>");
 	for (int i = 1; i < argc; ++i) {
 		const char * filepath = argv[i];
 		const unsigned slen = strlen(filepath);
@@ -153,11 +211,11 @@ int main(int argc, char * argv[]) {
 	if (gVerbose) {
 	    // write invocation to std error, to make it easy to rerun...
 	    std::cerr << argv[0] << " -v";
-	    if (useEdgeLengths) {
+	    if (gUseEdgeLengths) {
 	        std::cerr << " -e";
 	    }
-	    std::cerr << " -i" << leafSetIntersectionSize;
-	    std::cerr << " -m" << maxSubProblemSize;
+	    std::cerr << " -i" << gLeafSetIntersectionSize;
+	    std::cerr << " -m" << gMaxSubProblemSize;
 	    std::cerr << " -f" << formatName;
 	    if (filefound) {
 	        std::cerr << " \"" << filename  << "\"";
@@ -168,9 +226,8 @@ int main(int argc, char * argv[]) {
 	    std::cerr << gErrMsgPrefix << "Reading from stdin..." << std::endl;
 	}
 
-	
-	
-	return 0;
+
+    return readInput(*inpStream, f, filename);
 }
 
 
