@@ -119,7 +119,7 @@ int main(int argc, char * argv[]) {
 			continue;
 		if (filepath[1] == 'h') {
 			printHelp(std::cout);
-			return 1;
+			return 0;
 		}
 		else if (filepath[1] == 'v')
 			gVerbose = true;

@@ -61,3 +61,10 @@ centroid_decomp: $(objects)
 # *.o is shell wildcard for any file that ends in .o
 clean:
 	rm -f *.o centroid_decomp
+
+check: centroid_decomp
+	./centroid_decomp --version >/dev/null 2>&1
+	./centroid_decomp -h >/dev/null 2>&1
+	if ./centroid_decomp -bogus >/dev/null 2>&1 ; then false ; fi
+	echo "\nAll tests passed!"
+
