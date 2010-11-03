@@ -66,5 +66,7 @@ check: centroid_decomp
 	./centroid_decomp --version >/dev/null 2>&1
 	./centroid_decomp -h >/dev/null 2>&1
 	if ./centroid_decomp -bogus >/dev/null 2>&1 ; then false ; fi
+	if ./centroid_decomp -fphyliptree testdegtwo.phy >/dev/null 2>&1 ; then false ; fi
+	./centroid_decomp -fphyliptree test.phy >/dev/null 2>&1
 	echo "\nAll tests passed!"
 
