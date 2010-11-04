@@ -12,6 +12,7 @@
 
 # C preprocessor flags to include the parent of NCL's intsalled header directory.
 CPP_FLAGS = -I$(NCL_INSTALL_DIR)/include
+CXX_FLAGS = -g
 
 # linker flags to include the directory that hold libncl.
 LD_FLAGS = -L$(NCL_INSTALL_DIR)/lib/ncl
@@ -52,7 +53,7 @@ centroid_decomp: $(objects)
 # Note that this is where we use our CPP_FLAGS
 %.o: %.cpp $(DEPS)
 	if test -z $(NCL_INSTALL_DIR) ; then echo "NCL_INSTALL_DIR must be set. See comments in the Makefile." && exit 1; fi
-	$(CXX) -c -o $@  $<	$(CPP_FLAGS)
+	$(CXX) -c -o $@  $<	$(CPP_FLAGS) $(CXX_FLAGS)
 
 # This target without dependencies can only be invoked by specifying it as the
 # 	target ("make clean" from the command line).
