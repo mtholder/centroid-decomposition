@@ -23,7 +23,7 @@ NxsTaxaBlock * gPrevTaxaBlock = 0L;
 NxsSimpleNode * gRoot = 0L;
 long gNumNodes = 0;
 long gNumLeaves = 0;
-
+bool gDebugging = false;
 enum TreeSweepDirection {
     LEFT_DIR_BIT = 1,
     RIGHT_DIR_BIT = 2,
@@ -31,7 +31,8 @@ enum TreeSweepDirection {
     BELOW_DIR_BIT = 4,
     LEFT_OR_BELOW = 5,
     RIGHT_OR_BELOW = 6,
-    ALL_DIR_BITS = 7
+    ALL_DIR_BITS = 7,
+    THIS_NODE_DIR_BIT = 8
 };
 enum TreeDirection {
     LEFT_DIR = 1,
@@ -61,8 +62,7 @@ class LeafPathElement {
     bool operator<(const LeafPathElement & other) const {
         return this->iScore < other.iScore;
     }
-    
-    private:
+    public: // should be private
         const NxsSimpleNode * leaf;
         long iScore;
         TreeDirection dirToNext;
@@ -71,6 +71,7 @@ class LeafPathElement {
 typedef std::vector<LeafPathElement> LPECollection;
 typedef LPECollection::const_iterator LPECollectionConstIt;
 typedef LPECollection::iterator LPECollectionIt;
+std::ostream & operator<<(std::ostream &, const LeafPathElement &);
 
 class EdgeDecompInfo {
     public:
@@ -81,33 +82,16 @@ class EdgeDecompInfo {
 class NdBlob {
     public:
     
-        NdBlob() {
+        NdBlob(bool parentsLeftC): isParentsLeftChild(parentsLeftC) {
             Reset();
         }
         
         long GetNumLeavesBelow() const {
             return gNumNodes - this->numLeavesAboveEdge;
         }
-        void Reset() {
-            this->numLeavesAboveEdge = -1;
-            assert(edgeInfoStack.size() < 2);
-            if (edgeInfoStack.size() == 1) {
-                delete edgeInfoStack.top();
-                edgeInfoStack.pop();
-            }
-            assert(edgeInfoStack.empty());
-            activeEdgeInfo = &(this->fullEdgeInfo);
-            //this->numLeavesBelowEdge = -1;
-        }
-        void pop() {
-            if (activeEdgeInfo != &(this->fullEdgeInfo)) {
-                delete activeEdgeInfo;
-            }
-            edgeInfoStack.pop();
-            activeEdgeInfo = edgeInfoStack.top();
-            activeLeafDirStack.pop();
-            activeLeafDir  = activeLeafDirStack.top();
-        }
+        void Reset();
+        void pop();
+        
         long numLeavesAboveEdge;
         int ndDirWRTParent;
 
@@ -118,8 +102,58 @@ class NdBlob {
         std::stack<TreeSweepDirection> activeLeafDirStack;
         EdgeDecompInfo * activeEdgeInfo;
         
+        LPECollection lpeScratch1;
+        LPECollection lpeScratch2;
+        
+        bool isParentsLeftChild;
+        
 //        long numLeavesBelowEdge;
 };
+
+
+
+inline void NdBlob::Reset() {
+    this->numLeavesAboveEdge = -1;
+    assert(edgeInfoStack.size() < 2);
+    if (edgeInfoStack.size() == 1) {
+        delete edgeInfoStack.top();
+        edgeInfoStack.pop();
+    }
+    assert(edgeInfoStack.empty());
+    activeEdgeInfo = &(this->fullEdgeInfo);
+    //this->numLeavesBelowEdge = -1;
+}
+
+inline void NdBlob::pop() {
+    if (activeEdgeInfo != &(this->fullEdgeInfo)) {
+        delete activeEdgeInfo;
+    }
+    edgeInfoStack.pop();
+    activeEdgeInfo = edgeInfoStack.top();
+    activeLeafDirStack.pop();
+    activeLeafDir  = activeLeafDirStack.top();
+}
+
+
+
+inline std::ostream & operator<<(std::ostream & o, const TreeDirection &d) {
+    if (d == LEFT_DIR)
+        o << "LEFT_DIR";
+    else if (d == RIGHT_DIR)
+        o << "RIGHT_DIR";
+    else if (d == BELOW_DIR)
+        o << "BELOW_DIR";
+    else 
+        o << "THIS_NODE_DIR";
+    return o;
+}
+
+inline std::ostream & operator<<(std::ostream & o, const LeafPathElement &lpe) {
+    o << "LeafPathElement(leaf= "<< (long)lpe.leaf << ", dirToNext= " << lpe.dirToNext << ", indexInNext= " << lpe.indexInNext << ")";
+    return o;
+}
+
+
 unsigned gMaxNumLeafPaths = 0;
 
 // user-controlled options as global variables...
@@ -313,6 +347,144 @@ inline void mergeShortLeavesLists(const NxsSimpleNode &nd, TreeSweepDirection di
     }
 }
 
+void nonRecursiveFlagActivePathUp(const NxsSimpleNode * currAnc, 
+                                  const LPECollection * newActiveLeaves,
+                                  const NxsSimpleNode * & nextNd,
+                                  const LPECollection * & nextLPEC,
+                                  const NxsSimpleNode * & futureNd,
+                                  const LPECollection * & futureLPEC) {
+    if (gDebugging) {
+        std::cerr << "nonRecursiveFlagActivePathUp(currAnc=" << (long)currAnc << ", newActiveLeaves=" << (long) newActiveLeaves << ')' << std::endl;
+        std::cerr << "LeftChild(*currAnc)=" << (long)currAnc->GetFirstChild() << std::endl;
+        if (currAnc->GetFirstChild())
+            std::cerr << "RightChild(*currAnc)=" << (long)RightChild(*currAnc)  << std::endl;
+    }
+    assert(currAnc);
+    NdBlob * currBlob = (NdBlob*)(currAnc->scratch);
+    assert(currBlob);
+    
+    currBlob->activeLeafDirStack.push(currBlob->activeLeafDir);
+    currBlob->edgeInfoStack.push(currBlob->activeEdgeInfo);
+    currBlob->activeEdgeInfo = 0L;
+    currBlob->activeLeafDir = THIS_NODE_DIR_BIT;
+    
+    currBlob->lpeScratch1.clear();
+    currBlob->lpeScratch2.clear();
+    nextNd = 0L;
+    nextLPEC = 0L;
+    futureNd = 0L;
+    futureLPEC = 0L;
+    if (currAnc->IsTip()) {
+        return;
+    }
+    if (newActiveLeaves == 0L) {
+        LPECollectionConstIt nalIt = currBlob->fullEdgeInfo.closestLeavesAbove.begin();
+        currBlob->activeEdgeInfo = &(currBlob->fullEdgeInfo);
+        currBlob->numActiveLeavesAboveEdge = currBlob->fullEdgeInfo.closestLeavesAbove.size();
+        for (; nalIt != currBlob->fullEdgeInfo.closestLeavesAbove.end(); ++nalIt) {
+            const LeafPathElement & el = *nalIt;
+            if (el.dirToNext == LEFT_DIR) {
+                currBlob->lpeScratch1.push_back(el);
+            }
+            else {
+                assert(el.dirToNext == RIGHT_DIR);
+                currBlob->lpeScratch2.push_back(el);
+            }
+        }
+    
+    }
+    else {
+        LPECollectionConstIt nalIt = newActiveLeaves->begin();
+        currBlob->activeEdgeInfo = new EdgeDecompInfo();
+        currBlob->numActiveLeavesAboveEdge = newActiveLeaves->size();
+        for (; nalIt != newActiveLeaves->end(); ++nalIt) {
+            int indInCurr = nalIt->indexInNext;
+            const LeafPathElement & el = currBlob->fullEdgeInfo.closestLeavesAbove.at(indInCurr);
+            if (gDebugging) {
+                std::cerr << "nalIt->indexInNext = " << indInCurr << " el.leaf = " << (long) el.leaf << " nalIt->leaf = " << (long) nalIt->leaf << std::endl;
+            }
+            assert(el.leaf == nalIt->leaf);
+            if (el.dirToNext == LEFT_DIR) {
+                currBlob->lpeScratch1.push_back(el);
+            }
+            else {
+                assert(el.dirToNext == RIGHT_DIR);
+                currBlob->lpeScratch2.push_back(el);
+            }            
+        }
+    }
+    if (currBlob->lpeScratch1.empty()) {
+        if (currBlob->lpeScratch2.empty()) {
+            return;
+        }
+        currBlob->activeLeafDir = RIGHT_DIR_BIT;
+        futureNd = RightChild(*currAnc);
+        futureLPEC = &(currBlob->lpeScratch2);
+    }
+    else if (currBlob->lpeScratch2.empty()) {
+        currBlob->activeLeafDir = LEFT_DIR_BIT;
+        nextNd = LeftChild(*currAnc);
+        nextLPEC = &(currBlob->lpeScratch1);
+        }
+    else {
+        currBlob->activeLeafDir = LEFT_OR_RIGHT;
+        nextNd = LeftChild(*currAnc);
+        nextLPEC = &(currBlob->lpeScratch1);
+        futureNd = RightChild(*currAnc);
+        futureLPEC = &(currBlob->lpeScratch2);
+    }
+    
+}
+
+// Move up the tree..
+// Pushing current activeEdgeInfo and activeLeafDir to their stacks and update based
+//  on the `newActiveLeaves`  If `newActiveLeaves` is 0L, then the entire subtree
+//  should be regarded as active
+void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
+    if (gDebugging) {
+        std::cerr << "flagActivePathUp(currAnc=" << (long) currAnc << ", newActiveLeaves=" <<(long)newActiveLeaves << ")" << std::endl;
+        if (newActiveLeaves) {
+            std::cerr << " leaf paths:\n";
+            for (LPECollectionConstIt i = newActiveLeaves->begin(); i != newActiveLeaves->end(); ++i) {
+                std::cerr << "  " << *i << '\n';
+            }
+            std::cerr << std::endl;
+        }
+    }
+    std::stack<const NxsSimpleNode *> ndStack;
+    std::stack<const LPECollection *> lpecStack;
+    ndStack.push(currAnc);
+    lpecStack.push(newActiveLeaves);
+    while (!ndStack.empty()) {
+        const NxsSimpleNode * currNd = ndStack.top();
+        ndStack.pop();
+        assert(!lpecStack.empty());
+        const LPECollection * currLPEC = lpecStack.top();
+        lpecStack.pop();
+        
+        const NxsSimpleNode * nextNd = 0L;
+        const NxsSimpleNode * futureNd = 0L;
+        const LPECollection * nextLPEC = 0L;
+        const LPECollection * futureLPEC = 0L;
+        nonRecursiveFlagActivePathUp(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC);
+        if (futureNd != 0) {
+            assert(futureLPEC != 0);
+            ndStack.push(futureNd);
+            lpecStack.push(futureLPEC);
+        }
+        if (nextNd != 0) {
+            assert(nextLPEC != 0);
+            ndStack.push(nextNd);
+            lpecStack.push(nextLPEC);
+        }
+    }
+}
+void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
+    std::stack<const NxsSimpleNode *> ndStack;
+    std::stack<const LPECollection *> collStack;
+
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // leftSubtreeRoot=====>v   v <=rightSubtreeRoot
 //                       \ /
@@ -378,7 +550,7 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     
     NdBlob * centroidBlob = (NdBlob *)(centroidChild->scratch);
     NdBlob * gpBlob = (NdBlob *)(par->scratch); // Note that parBlob is actually from the edge that connects par to gpSubtreeRoot
-    NdBlob * sisBlob = (NdBlob *)(sibSubtreeRoot->scratch); // Note that parBlob is actually from the edge that connects par to gpSubtreeRoot
+    NdBlob * sibBlob = (NdBlob *)(sibSubtreeRoot->scratch); // Note that parBlob is actually from the edge that connects par to gpSubtreeRoot
     NdBlob * leftBlob = (NdBlob *)(leftSubtreeRoot->scratch);
     NdBlob * rightBlob = (NdBlob *)(rightSubtreeRoot->scratch);
     ////////////////////////////////////////////////////////////////////////////
@@ -386,7 +558,7 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     ////////////////////////////////////////////////////////////////////////////
     long numActLeavesAboveCentroid = centroidBlob->numActiveLeavesAboveEdge;
     long numActLeavesBelowCentroid = numActiveLeaves - numActLeavesAboveCentroid;
-    long numAboveChosen, numBelowChosen, numLeftChosen, numRightChosen, numSisChosen, numGPChosen;
+    long numAboveChosen, numBelowChosen, numLeftChosen, numRightChosen, numSibChosen, numGPChosen;
     if (numActLeavesBelowCentroid < gFloorHalfIntersectionSize) {
         numBelowChosen = numActLeavesBelowCentroid;
         assert(numActLeavesAboveCentroid >= gLeafSetIntersectionSize - numBelowChosen);
@@ -423,28 +595,28 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     
 
     long floorHalfBelow = numBelowChosen/2;
-    if (sisBlob->numActiveLeavesAboveEdge < floorHalfBelow) {
-        numSisChosen = sisBlob->numActiveLeavesAboveEdge;
-        assert((numActiveLeaves  - gpBlob->numActiveLeavesAboveEdge) >= numBelowChosen - numSisChosen);
-        numGPChosen = numBelowChosen - numSisChosen;
+    if (sibBlob->numActiveLeavesAboveEdge < floorHalfBelow) {
+        numSibChosen = sibBlob->numActiveLeavesAboveEdge;
+        assert((numActiveLeaves  - gpBlob->numActiveLeavesAboveEdge) >= numBelowChosen - numSibChosen);
+        numGPChosen = numBelowChosen - numSibChosen;
     }
     else {
         if ((numActiveLeaves  - gpBlob->numActiveLeavesAboveEdge) < floorHalfBelow) {
             numGPChosen = (numActiveLeaves  - gpBlob->numActiveLeavesAboveEdge);
-            assert(sisBlob->numActiveLeavesAboveEdge >= numBelowChosen - numGPChosen);
+            assert(sibBlob->numActiveLeavesAboveEdge >= numBelowChosen - numGPChosen);
         }
         else {
             numGPChosen = floorHalfBelow; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
         }
-        numSisChosen = numBelowChosen - numGPChosen;
+        numSibChosen = numBelowChosen - numGPChosen;
     }
 
     assert(numAboveChosen + numBelowChosen == gLeafSetIntersectionSize);
     assert(numLeftChosen + numRightChosen == numAboveChosen);
-    assert(numSisChosen + numGPChosen == numBelowChosen);
+    assert(numSibChosen + numGPChosen == numBelowChosen);
     assert(numLeftChosen > 0);
     assert(numRightChosen > 0);
-    assert(numSisChosen > 0);
+    assert(numSibChosen > 0);
     assert(numGPChosen > 0);
     
     
@@ -452,38 +624,61 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     assert(leftEDI);
     const LPECollection & leftFullLPEC = leftEDI->closestLeavesAbove;
     assert(leftFullLPEC.size() >= numLeftChosen);
-    const LPECollection::const_iterator lfLPECIt = leftFullLPEC.begin();
-    LPECollection leftCommonLeafSet(lfLPECIt, lfLPECIt + numLeftChosen);
+    LPECollection::const_iterator lfLPECIt = leftFullLPEC.begin();
+    LPECollection leftCommonLeafSet;
+    leftCommonLeafSet.reserve(numLeftChosen);
+    for (unsigned i=0; i < numLeftChosen; ++i, ++lfLPECIt) {
+        leftCommonLeafSet.push_back(LeafPathElement(*lfLPECIt, LEFT_DIR, i));
+    }
     assert(leftCommonLeafSet.size() == numLeftChosen); 
     
     const EdgeDecompInfo * rightEDI = rightBlob->activeEdgeInfo;
     assert(rightEDI);
     const LPECollection & rightFullLPEC = rightEDI->closestLeavesAbove;
     assert(rightFullLPEC.size() >= numRightChosen);
-    const LPECollection::const_iterator rfLPECIt = rightFullLPEC.begin();
-    LPECollection rightCommonLeafSet(rfLPECIt, rfLPECIt + numRightChosen);
+    LPECollection::const_iterator rfLPECIt = rightFullLPEC.begin();
+    LPECollection rightCommonLeafSet;
+    rightCommonLeafSet.reserve(numRightChosen);
+    for (unsigned i=0; i < numRightChosen; ++i, ++rfLPECIt) {
+        rightCommonLeafSet.push_back(LeafPathElement(*rfLPECIt, RIGHT_DIR, i));
+    }
     assert(rightCommonLeafSet.size() == numRightChosen); 
 
-    const EdgeDecompInfo * sisEDI = sisBlob->activeEdgeInfo;
-    assert(sisEDI);
-    const LPECollection & sisFullLPEC = sisEDI->closestLeavesAbove;
-    assert(sisFullLPEC.size() >= numSisChosen);
-    const LPECollection::const_iterator sisfLPECIt = sisFullLPEC.begin();
-    LPECollection sisCommonLeafSet(sisfLPECIt, sisfLPECIt + numSisChosen);
-    assert(sisCommonLeafSet.size() == numSisChosen); 
+    const EdgeDecompInfo * sibEDI = sibBlob->activeEdgeInfo;
+    assert(sibEDI);
+    const LPECollection & sibFullLPEC = sibEDI->closestLeavesAbove;
+    assert(sibFullLPEC.size() >= numSibChosen);
+    LPECollection::const_iterator sibfLPECIt = sibFullLPEC.begin();
+    LPECollection sibCommonLeafSet;
+    sibCommonLeafSet.reserve(numSibChosen);
+    for (unsigned i=0; i < numSibChosen; ++i, ++sibfLPECIt) {
+        sibCommonLeafSet.push_back(LeafPathElement(*sibfLPECIt, (sibBlob->isParentsLeftChild ? LEFT_DIR : RIGHT_DIR), i));
+    }
+    assert(sibCommonLeafSet.size() == numSibChosen); 
 
     const EdgeDecompInfo * gpEDI = gpBlob->activeEdgeInfo;
     assert(gpEDI);
     const LPECollection & gpFullLPEC = gpEDI->closestLeavesBelow;
     assert(gpFullLPEC.size() >= numGPChosen);
-    const LPECollection::const_iterator gpfLPECIt = gpFullLPEC.begin();
-    LPECollection gpCommonLeafSet(gpfLPECIt, gpfLPECIt + numGPChosen);
+    LPECollection::const_iterator gpfLPECIt = gpFullLPEC.begin();
+    LPECollection gpCommonLeafSet;
+    gpCommonLeafSet.reserve(numGPChosen);
+    for (unsigned i=0; i < numGPChosen; ++i, ++gpfLPECIt) {
+        gpCommonLeafSet.push_back(LeafPathElement(*gpfLPECIt, BELOW_DIR, i));
+    }
     assert(gpCommonLeafSet.size() == numGPChosen); 
     
     ////////////////////////////////////////////////////////////////////////////
     // Step 3 - 6 activate each subproblem in turn and recurse...
     //
     ////////////////////////////////////////////////////////////////////////////
+    flagActivePathUp(leftSubtreeRoot, 0L);
+    flagActivePathUp(rightSubtreeRoot, &rightCommonLeafSet);
+    flagActivePathUp(sibSubtreeRoot, &sibCommonLeafSet);
+    flagActivePathDown(par, &gpCommonLeafSet);
+    long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + leftBlob->numActiveLeavesAboveEdge;
+
+
     
     
 }
@@ -621,7 +816,8 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
         } 
         else {
             
-            NdBlob * rlb = new NdBlob();
+            NdBlob * rlb = new NdBlob(true);
+            rlb->isParentsLeftChild = true;
             rootLeft->scratch = (void *) rlb;
             rlb->numLeavesAboveEdge = 1;
             rlb->numActiveLeavesAboveEdge = 1;
@@ -633,7 +829,7 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
             
             for (; postIt != preorderTraversal.rend(); ++postIt) {
                 const NxsSimpleNode * nd = *postIt;
-                NdBlob * nb = new NdBlob();
+                NdBlob * nb = new NdBlob(LeftChild(*Parent(*nd)) == nd);
                 gAllocedBlobs.push_back(nb);
                 nd->scratch = (void *) nb;
                 nb->activeLeafDir = ALL_DIR_BITS;
@@ -651,7 +847,7 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
                     if (currSC < minCentroidScore) {
                         centroidChild = nd;
                         minCentroidScore = currSC;
-                        if (gVerbose) {
+                        if (gDebugging) {
                             std::cerr << "New Min Centroid Score = " << minCentroidScore << std::endl;
                         }
                     }
@@ -659,7 +855,8 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
                     
                 }
             }
-            NdBlob * rb = new NdBlob();
+            NdBlob * rb = new NdBlob(false);
+            rb->isParentsLeftChild = false;
             gRoot->scratch = (void *) rb;
             rb->numLeavesAboveEdge = LeftBlob(*gRoot)->numLeavesAboveEdge + RightBlob(*gRoot)->numLeavesAboveEdge;
             rb->numActiveLeavesAboveEdge = rb->numLeavesAboveEdge;
@@ -678,6 +875,9 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
                 const NxsSimpleNode * nd = *preIt;
                 assert(nd != 0L);
                 if (!nd->IsTip()) {
+                    NdBlob* ndBlob = (NdBlob*)(nd->scratch);
+                    EdgeDecompInfo * edgeInfo = ndBlob->activeEdgeInfo;
+                    assert(edgeInfo);
                     if (IsRootChild(*nd)) {
                         const NxsSimpleNode * leafChild = gRoot->GetFirstChild();
                         assert(leafChild != nd);
@@ -686,16 +886,17 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
                         EdgeDecompInfo * lcEdgeInfo = ((NdBlob*)leafChild->scratch)->activeEdgeInfo;
                         assert(lcEdgeInfo);
                         assert(lcEdgeInfo->closestLeavesAbove.size() == 1);
-                        EdgeDecompInfo * edgeInfo = ((NdBlob*)nd->scratch)->activeEdgeInfo;
-                        assert(edgeInfo);
                         assert(edgeInfo->closestLeavesBelow.empty());
                         edgeInfo->closestLeavesBelow.push_back(LeafPathElement(lcEdgeInfo->closestLeavesAbove[0], BELOW_DIR, 0));
                     }
                     else {
-                        mergeShortLeavesLists(*nd, LEFT_OR_BELOW, *LeftChild(*nd), *Parent(*nd));
+                        if (ndBlob->isParentsLeftChild)
+                            mergeShortLeavesLists(*nd, RIGHT_OR_BELOW, *RightChild(*nd), *Parent(*nd));
+                        else
+                            mergeShortLeavesLists(*nd, LEFT_OR_BELOW, *LeftChild(*nd), *Parent(*nd));
                     }
                 }
-                if (gVerbose) {
+                if (gDebugging) {
                     NdBlob * nb = (NdBlob *) nd->scratch;
                     std::cerr << "nd = " << (long) nd << " blob=" << (long) nb << " blob->numLeavesAboveEdge = " << nb->numLeavesAboveEdge <<  " blob->activeEdgeInfo = " << (long) nb->activeEdgeInfo <<  " blob->activeEdgeInfo->closestLeavesAbove.size() = " << nb->activeEdgeInfo->closestLeavesAbove.size() << '\n';
                     if (nd->IsTip()) {
@@ -778,15 +979,16 @@ void printHelp(std::ostream & out)
 	out << "    can be topological or based on EDGE_LENGTHS (-e option below; in this case all edges\n";
 	out << "    in the tree must have edge lengths).\n";
 	out << "\nCommand-line flags:\n\n";
-	out << "    -h on the command line shows this help message.\n\n";
-	out << "    -v verbose output to stdandard error.\n\n";
+	out << "    -d debugging output.\n\n";
 	out << "    -e use EDGE_LENGTHS in the shortest leaf calculations.\n\n";
-	out << "    -i<non-negative integer> specifies MIN_LEAF_INTERSECTION_SIZE\n";
-	out << "    -m<non-negative integer> specifies MAX_SUBTREE_SIZE\n";
 	out << "    -f<format> specifies the input file format expected:\n";
 	out << "            -fnexus     NEXUS (this is also the default)\n";
 	out << "            -fphyliptree    Phylip tree file (simple newick string)\n";
 	out << "            -frelaxedphyliptree Relaxed Phylip name restrictions\n";
+	out << "    -h on the command line shows this help message.\n\n";
+	out << "    -i<non-negative integer> specifies MIN_LEAF_INTERSECTION_SIZE\n";
+	out << "    -m<non-negative integer> specifies MAX_SUBTREE_SIZE\n";
+	out << "    -v verbose output to stdandard error.\n\n";
 }
 
 
@@ -803,6 +1005,10 @@ int main(int argc, char * argv[]) {
 		if (filepath[1] == 'h') {
 			printHelp(std::cout);
 			return 0;
+		}
+		else if (filepath[1] == 'd') {
+		    gDebugging = true;
+			gVerbose = true;
 		}
 		else if (filepath[1] == 'v')
 			gVerbose = true;
@@ -847,7 +1053,6 @@ int main(int argc, char * argv[]) {
 			return 5;
 		}
 	}
-
     if (gLeafSetIntersectionSize < 4) {
         std::cerr << gErrMsgPrefix << "Minimum size of the leaf intersection set must 4" << std::endl;
         return 6;
