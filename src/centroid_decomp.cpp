@@ -456,9 +456,30 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     LPECollection leftCommonLeafSet(lfLPECIt, lfLPECIt + numLeftChosen);
     assert(leftCommonLeafSet.size() == numLeftChosen); 
     
-    LPECollection rightCommonLeafSet;
-    LPECollection sisCommonLeafSet;
-    LPECollection gpCommonLeafSet;
+    const EdgeDecompInfo * rightEDI = rightBlob->activeEdgeInfo;
+    assert(rightEDI);
+    const LPECollection & rightFullLPEC = rightEDI->closestLeavesAbove;
+    assert(rightFullLPEC.size() >= numRightChosen);
+    const LPECollection::const_iterator rfLPECIt = rightFullLPEC.begin();
+    LPECollection rightCommonLeafSet(rfLPECIt, rfLPECIt + numRightChosen);
+    assert(rightCommonLeafSet.size() == numRightChosen); 
+
+    const EdgeDecompInfo * sisEDI = sisBlob->activeEdgeInfo;
+    assert(sisEDI);
+    const LPECollection & sisFullLPEC = sisEDI->closestLeavesAbove;
+    assert(sisFullLPEC.size() >= numSisChosen);
+    const LPECollection::const_iterator sisfLPECIt = sisFullLPEC.begin();
+    LPECollection sisCommonLeafSet(sisfLPECIt, sisfLPECIt + numSisChosen);
+    assert(sisCommonLeafSet.size() == numSisChosen); 
+
+    const EdgeDecompInfo * gpEDI = gpBlob->activeEdgeInfo;
+    assert(gpEDI);
+    const LPECollection & gpFullLPEC = gpEDI->closestLeavesBelow;
+    assert(gpFullLPEC.size() >= numGPChosen);
+    const LPECollection::const_iterator gpfLPECIt = gpFullLPEC.begin();
+    LPECollection gpCommonLeafSet(gpfLPECIt, gpfLPECIt + numGPChosen);
+    assert(gpCommonLeafSet.size() == numGPChosen); 
+    
     ////////////////////////////////////////////////////////////////////////////
     // Step 3 - 6 activate each subproblem in turn and recurse...
     //
