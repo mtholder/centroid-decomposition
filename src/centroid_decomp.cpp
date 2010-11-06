@@ -26,6 +26,10 @@ long gNumNodes = 0;
 long gNumLeaves = 0;
 bool gDebugging = false;
 bool gEmitIntermediates = false;
+
+NxsSimpleNode * rootLeft ; // leaf 0, which will be the left child of the root
+
+
 enum TreeSweepDirection {
     LEFT_DIR_BIT = 1,
     RIGHT_DIR_BIT = 2,
@@ -929,7 +933,7 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     n += ".0";
     if (gEmitIntermediates && gOutputStream != 0L) {
         *gOutputStream << "Tree " << n << " = [&U] ";
-        writeNewickOfActive(*gOutputStream, activeRoot);
+        writeNewickOfActive(*gOutputStream, Parent(*rootLeft)); //activeRoot);
         *gOutputStream << ";\n";
     }
 
@@ -999,7 +1003,7 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
     NxsSimpleTree t(ftd, 0, 0.0);
     NxsSimpleNode * leaf0 = t.RerootAt(0);
     NxsSimpleNode * iniRoot = const_cast<NxsSimpleNode *>(t.GetRootConst());
-    NxsSimpleNode * rootLeft = const_cast<NxsSimpleNode *>(LeftChild(*iniRoot));
+    rootLeft = const_cast<NxsSimpleNode *>(LeftChild(*iniRoot));
     if (rootLeft != leaf0) {
         if (rootLeft->GetNextSib() == leaf0) {
             rootLeft->LowLevelSetNextSib(leaf0->GetNextSib());
