@@ -158,8 +158,8 @@ unsigned gMaxNumLeafPaths = 0;
 
 // user-controlled options as global variables...
 bool gVerbose = false;
-long gLeafSetIntersectionSize = 50; // we demand that the leaf set intersection size be exactly THIS_NODE_DIR
-long gFloorHalfIntersectionSize = 25; // we shoot for this many above and below the centroid
+long gLeafSetIntersectionSize = 48; // we demand that the leaf set intersection size be exactly THIS_NODE_DIR
+long gFloorHalfIntersectionSize = 24; // we shoot for this many above and below the centroid
 
 long gMaxSubProblemSize = 250;
 bool gUseEdgeLengths = false;
@@ -380,7 +380,7 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
     if (newActiveLeaves == 0L) {
         LPECollectionConstIt nalIt = currBlob->fullEdgeInfo.closestLeavesBelow.begin();
         currBlob->activeEdgeInfo = &(currBlob->fullEdgeInfo);
-        currBlob->numActiveLeavesAboveEdge = gNumLeaves - currBlob->fullEdgeInfo.closestLeavesBelow.size();
+        currBlob->numActiveLeavesAboveEdge = gNumLeaves - currBlob->numLeavesAboveEdge;
         for (; nalIt != currBlob->fullEdgeInfo.closestLeavesBelow.end(); ++nalIt) {
             const LeafPathElement & el = *nalIt;
             if (el.dirToNext == LEFT_DIR) {
@@ -494,7 +494,7 @@ void nonRecursiveFlagActivePathUp(const NxsSimpleNode * currAnc,
     if (newActiveLeaves == 0L) {
         LPECollectionConstIt nalIt = currBlob->fullEdgeInfo.closestLeavesAbove.begin();
         currBlob->activeEdgeInfo = &(currBlob->fullEdgeInfo);
-        currBlob->numActiveLeavesAboveEdge = currBlob->fullEdgeInfo.closestLeavesAbove.size();
+        currBlob->numActiveLeavesAboveEdge = currBlob->numLeavesAboveEdge;
         for (; nalIt != currBlob->fullEdgeInfo.closestLeavesAbove.end(); ++nalIt) {
             const LeafPathElement & el = *nalIt;
             if (el.dirToNext == LEFT_DIR) {
@@ -850,12 +850,18 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     // Step 3 - 6 activate each subproblem in turn and recurse...
     //
     ////////////////////////////////////////////////////////////////////////////
+    if (gDebugging) {
+        std::cerr << "Before flagging leftBlob->numActiveLeavesAboveEdge = " << leftBlob->numActiveLeavesAboveEdge << ", currBlob->fullEdgeInfo.closestLeavesAbove.size() = " << leftBlob->fullEdgeInfo.closestLeavesAbove.size() << std::endl;
+    }
     flagActivePathUp(leftSubtreeRoot, 0L);
     flagActivePathUp(rightSubtreeRoot, &rightCommonLeafSet);
     flagActivePathUp(sibSubtreeRoot, &sibCommonLeafSet);
     flagActivePathDown(par, &gpCommonLeafSet);
     long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + leftBlob->numActiveLeavesAboveEdge;
-
+    if (gDebugging) {
+        std::cerr << "numLeftChosen = " << numLeftChosen << ", numRightChosen = " << numRightChosen  << ", numSibChosen = " << numSibChosen << ",  numGPChosen = " << numGPChosen << std::endl;
+        std::cerr << "leftBlob->numActiveLeavesAboveEdge = " << leftBlob->numActiveLeavesAboveEdge << ", sizeOfLeftSubproblem = " << sizeOfLeftSubproblem << std::endl;
+    }
 
 
 
