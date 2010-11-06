@@ -5,6 +5,7 @@
 #include <string>
 #include <stack>
 #include <list>
+#include <algorithm>
 
 
 void printHelp(std::ostream & out);
@@ -24,6 +25,7 @@ NxsSimpleNode * gRoot = 0L;
 long gNumNodes = 0;
 long gNumLeaves = 0;
 bool gDebugging = false;
+bool gEmitIntermediates = false;
 enum TreeSweepDirection {
     LEFT_DIR_BIT = 1,
     RIGHT_DIR_BIT = 2,
@@ -594,7 +596,8 @@ void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActi
     }
 }
 
-void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
+/// \returns the "active Root"
+const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
     if (gDebugging) {
         std::cerr << "flagActivePathDown(currAnc=" << (long) currAnc << ", newActiveLeaves=" <<(long)newActiveLeaves << ")" << std::endl;
         if (newActiveLeaves) {
@@ -609,6 +612,7 @@ void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newAc
     std::stack<const LPECollection *> upLPECStack;
     std::stack<const NxsSimpleNode *> downStack;
     std::stack<const LPECollection *> downLPECStack;
+    const NxsSimpleNode * actRoot = currAnc;
     downStack.push(currAnc);
     downLPECStack.push(newActiveLeaves);
     for (;;) {
@@ -627,6 +631,7 @@ void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newAc
             const LPECollection * futureLPEC = 0L;
             nonRecursiveFlagActivePathDown(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC);
             if (futureNd != 0) {
+                actRoot = futureNd;
                 assert(futureLPEC != 0);
                 downStack.push(futureNd);
                 downLPECStack.push(futureLPEC);
@@ -661,6 +666,63 @@ void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newAc
             }
         }
     }
+    return actRoot;
+}
+
+void writeNewickOfActive(std::ostream & out, const NxsSimpleNode *activeRoot) {
+    assert(activeRoot);
+    typedef std::pair<const NxsSimpleNode *, std::stack<char> > NdSuffixPair;
+    std::stack<NdSuffixPair> ndStack;
+    std::stack<char> currSuffix;
+    char currPrefix = '\0';
+    for (;;) {
+        NdBlob * currBlob = (NdBlob *)(activeRoot->scratch);
+        //std::cerr << "activeRoot = " << (long) activeRoot << ", activeRoot->GetTaxonIndex()=" << activeRoot->GetTaxonIndex() << std::endl;
+        if (activeRoot->IsTip()) {
+            out << (activeRoot->GetTaxonIndex() + 1);
+            activeRoot = 0L;
+        }
+        else {
+            if (currBlob->activeLeafDir == LEFT_OR_RIGHT || currBlob->activeLeafDir == ALL_DIR_BITS) {
+                if (currPrefix != '\0') {
+                    currSuffix.push(currPrefix);
+                }
+                currSuffix.push(')');
+                ndStack.push(NdSuffixPair(RightChild(*activeRoot), currSuffix));
+                currSuffix = std::stack<char>();
+                currPrefix = ',';
+                out << '(';
+                activeRoot = LeftChild(*activeRoot);
+            }
+            else if (currBlob->activeLeafDir == LEFT_DIR_BIT) {
+                activeRoot = LeftChild(*activeRoot);
+                assert(activeRoot);
+            }
+            else {
+                assert(currBlob->activeLeafDir == RIGHT_DIR_BIT);
+            }
+        }        
+        if (activeRoot == 0L) {
+            if (currPrefix != '\0') {
+                out << currPrefix;
+                currPrefix = '\0';
+            }
+            while (!currSuffix.empty()) {                
+                out << currSuffix.top();
+                currSuffix.pop();
+            }
+            if (ndStack.empty()) {
+                assert(currPrefix == '\0');
+                break;
+            }
+            else {
+                const NdSuffixPair & p = ndStack.top();
+                activeRoot = p.first;
+                currSuffix = p.second;
+                ndStack.pop();
+            }
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -687,7 +749,8 @@ void flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newAc
 ///////////////////////////////////////////////////////////////////////////
 void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTraversal,
                                   const NxsSimpleNode *centroidChild,
-                                  long numActiveLeaves) {
+                                  long numActiveLeaves,
+                                  NxsString namePrefix) {
     ////////////////////////////////////////////////////////////////////////////
     // Step one is to get identify leftSubtreeRoot, rightSubtreeRoot, sibSubtreeRoot
     //  and gpSubtreeRoot (see diagrams above).
@@ -856,11 +919,18 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     flagActivePathUp(leftSubtreeRoot, 0L);
     flagActivePathUp(rightSubtreeRoot, &rightCommonLeafSet);
     flagActivePathUp(sibSubtreeRoot, &sibCommonLeafSet);
-    flagActivePathDown(par, &gpCommonLeafSet);
+    const NxsSimpleNode * activeRoot = flagActivePathDown(par, &gpCommonLeafSet);
     long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + leftBlob->numActiveLeavesAboveEdge;
     if (gDebugging) {
         std::cerr << "numLeftChosen = " << numLeftChosen << ", numRightChosen = " << numRightChosen  << ", numSibChosen = " << numSibChosen << ",  numGPChosen = " << numGPChosen << std::endl;
         std::cerr << "leftBlob->numActiveLeavesAboveEdge = " << leftBlob->numActiveLeavesAboveEdge << ", sizeOfLeftSubproblem = " << sizeOfLeftSubproblem << std::endl;
+    }
+    NxsString n = namePrefix;
+    n += ".0";
+    if (gEmitIntermediates && gOutputStream != 0L) {
+        *gOutputStream << "Tree " << n << " = [&U] ";
+        writeNewickOfActive(*gOutputStream, activeRoot);
+        *gOutputStream << ";\n";
     }
 
 
@@ -1094,8 +1164,15 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
         }
 
         assert(centroidChild != 0);
+        NxsString namePrefix;
+        namePrefix += gCurrTreeIndex;
+        if (gEmitIntermediates && gOutputStream != 0L) {
+            *gOutputStream << "Tree " << namePrefix << " = [&U] ";
+            writeNewickOfActive(*gOutputStream, Parent(*rootLeft));
+            *gOutputStream << ";\n";
+        }
 
-        DecomposeAroundCentroidChild(preorderTraversal, centroidChild, gNumLeaves);
+        DecomposeAroundCentroidChild(preorderTraversal, centroidChild, gNumLeaves, namePrefix);
     }
     catch (...) {
          for (std::vector<NxsSimpleNode *>::iterator cIt = bogusChildren.begin(); cIt != bogusChildren.end(); ++cIt)
@@ -1193,6 +1270,7 @@ int main(int argc, char * argv[]) {
 		else if (filepath[1] == 'd') {
 		    gDebugging = true;
 			gVerbose = true;
+			gEmitIntermediates = true;
 		}
 		else if (filepath[1] == 'v')
 			gVerbose = true;
