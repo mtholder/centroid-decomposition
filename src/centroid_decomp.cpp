@@ -88,7 +88,7 @@ class EdgeDecompInfo {
 class NdBlob {
     public:
 
-        NdBlob(bool parentsLeftC): isParentsLeftChild(parentsLeftC) {
+        NdBlob(bool parentsLeftC): isParentsLeftChild(parentsLeftC), focalEdgeDir(BELOW_DIR) {
             Reset();
         }
 
@@ -96,17 +96,21 @@ class NdBlob {
             return gNumNodes - this->numLeavesAboveEdge;
         }
         void Reset();
-        void pop();
+        void popBlob();
 
         long numLeavesAboveEdge;
         int ndDirWRTParent;
 
         EdgeDecompInfo fullEdgeInfo;
+
         long numActiveLeavesAboveEdge;
         TreeSweepDirection activeLeafDir;
+        EdgeDecompInfo * activeEdgeInfo;
+        TreeDirection focalEdgeDir; // direction to move to find the focal edge (e.g. the centroid edge) This will be BELOW_DIR for the node is attached to the edge
+
         std::stack<EdgeDecompInfo*> edgeInfoStack;
         std::stack<TreeSweepDirection> activeLeafDirStack;
-        EdgeDecompInfo * activeEdgeInfo;
+        std::stack<TreeDirection> focalEdgeDirStack;
 
         LPECollection lpeScratch1;
         LPECollection lpeScratch2;
@@ -130,14 +134,16 @@ inline void NdBlob::Reset() {
     //this->numLeavesBelowEdge = -1;
 }
 
-inline void NdBlob::pop() {
+inline void NdBlob::popBlob() {
     if (activeEdgeInfo != &(this->fullEdgeInfo)) {
         delete activeEdgeInfo;
     }
-    edgeInfoStack.pop();
     activeEdgeInfo = edgeInfoStack.top();
-    activeLeafDirStack.pop();
+    edgeInfoStack.pop();
     activeLeafDir  = activeLeafDirStack.top();
+    activeLeafDirStack.pop();
+    focalEdgeDir = focalEdgeDirStack.top();
+    focalEdgeDirStack.pop();
 }
 
 
@@ -151,6 +157,28 @@ inline std::ostream & operator<<(std::ostream & o, const TreeDirection &d) {
         o << "BELOW_DIR";
     else
         o << "THIS_NODE_DIR";
+    return o;
+}
+
+inline std::ostream & operator<<(std::ostream & o, const TreeSweepDirection &d) {
+    if (d == LEFT_DIR_BIT)
+        o << "LEFT_DIR_BIT";
+    else if (d == RIGHT_DIR_BIT)
+        o << "RIGHT_DIR_BIT";
+    else if (d == LEFT_OR_RIGHT)
+        o << "LEFT_OR_RIGHT";
+    else if (d == LEFT_OR_RIGHT)
+        o << "BELOW_DIR_BIT";
+    else if (d == BELOW_DIR_BIT)
+        o << "LEFT_OR_BELOW";
+    else if (d == LEFT_OR_BELOW)
+        o << "RIGHT_OR_BELOW";
+    else if (d == RIGHT_OR_BELOW)
+        o << "LEFT_OR_RIGHT";
+    else if (d == ALL_DIR_BITS)
+        o << "ALL_DIR_BITS";
+    else
+        o << "THIS_NODE_DIR_BIT";
     return o;
 }
 
@@ -313,11 +341,11 @@ void mergePathElementLists(LPECollection &peList,
 }
 
 
-inline int CentroidScore(const NxsSimpleNode &nd,  long numActive) {
+inline long CentroidScore(const NxsSimpleNode &nd,  long numActive) {
     NdBlob * b = (NdBlob *)nd.scratch;
     assert(b);
-    const int above = b->numActiveLeavesAboveEdge;
-    const int below = numActive - above;
+    const long above = b->numActiveLeavesAboveEdge;
+    const long below = numActive - above;
 
     return (above > below ? above - below : below - above);
 }
@@ -360,7 +388,7 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
                                   const NxsSimpleNode * & futureNd,
                                   const LPECollection * & futureLPEC) {
     if (gDebugging) {
-        std::cerr << "nonRecursiveFlagActivePathUp(currAnc=" << (long)currAnc << ", newActiveLeaves=" << (long) newActiveLeaves << ')' << std::endl;
+        std::cerr << "nonRecursiveFlagActivePathDown(currAnc=" << (long)currAnc << ", newActiveLeaves=" << (long) newActiveLeaves << ')' << std::endl;
         std::cerr << "LeftChild(*currAnc)=" << (long)currAnc->GetFirstChild() << std::endl;
         if (currAnc->GetFirstChild())
             std::cerr << "RightChild(*currAnc)=" << (long)RightChild(*currAnc)  << std::endl;
@@ -560,6 +588,7 @@ void nonRecursiveFlagActivePathUp(const NxsSimpleNode * currAnc,
 // Pushing current activeEdgeInfo and activeLeafDir to their stacks and update based
 //  on the `newActiveLeaves`  If `newActiveLeaves` is 0L, then the entire subtree
 //  should be regarded as active
+/// Sets focalEdgeDir for nodes along the path *EXCEPT* for currAnc
 void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
     if (gDebugging) {
         std::cerr << "flagActivePathUp(currAnc=" << (long) currAnc << ", newActiveLeaves=" <<(long)newActiveLeaves << ")" << std::endl;
@@ -591,15 +620,28 @@ void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActi
             assert(futureLPEC != 0);
             ndStack.push(futureNd);
             lpecStack.push(futureLPEC);
+
+            NdBlob * futureBlob = (NdBlob *)futureNd->scratch;
+            assert(futureBlob);
+            futureBlob->focalEdgeDirStack.push(futureBlob->focalEdgeDir);
+            futureBlob->focalEdgeDir = BELOW_DIR;
+           
         }
         if (nextNd != 0) {
             assert(nextLPEC != 0);
             ndStack.push(nextNd);
             lpecStack.push(nextLPEC);
+
+            NdBlob * nextBlob = (NdBlob *)nextNd->scratch;
+            assert(nextBlob);
+            nextBlob->focalEdgeDirStack.push(nextBlob->focalEdgeDir);
+            nextBlob->focalEdgeDir = BELOW_DIR;
         }
     }
 }
 
+
+/// Sets focalEdgeDir for nodes along the path *EXCEPT* for currAnc
 /// \returns the "active Root"
 const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves) {
     if (gDebugging) {
@@ -639,11 +681,22 @@ const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPE
                 assert(futureLPEC != 0);
                 downStack.push(futureNd);
                 downLPECStack.push(futureLPEC);
+
+                NdBlob * futureBlob = (NdBlob *)futureNd->scratch;
+                assert(futureBlob);
+                NdBlob * currBlob = (NdBlob *)currNd->scratch;
+                assert(currBlob);
+                futureBlob->focalEdgeDirStack.push(futureBlob->focalEdgeDir);
+                futureBlob->focalEdgeDir = (currBlob->isParentsLeftChild ? LEFT_DIR : RIGHT_DIR);
             }
             if (nextNd != 0) {
                 assert(nextLPEC != 0);
                 upStack.push(nextNd);
                 upLPECStack.push(nextLPEC);
+                NdBlob * nextBlob = (NdBlob *) nextNd->scratch;
+                assert(nextBlob);
+                nextBlob->focalEdgeDirStack.push(nextBlob->focalEdgeDir);
+                nextBlob->focalEdgeDir = BELOW_DIR;
             }
         }
         else {
@@ -681,12 +734,14 @@ void writeNewickOfActive(std::ostream & out, const NxsSimpleNode *activeRoot) {
     char currPrefix = '\0';
     for (;;) {
         NdBlob * currBlob = (NdBlob *)(activeRoot->scratch);
-        //std::cerr << "activeRoot = " << (long) activeRoot << ", activeRoot->GetTaxonIndex()=" << activeRoot->GetTaxonIndex() << std::endl;
+        //std::cerr << "activeRoot = " << (long) activeRoot << ", activeRoot->GetTaxonIndex()=" << activeRoot->GetTaxonIndex() << ", currBlob->activeLeafDir="  << currBlob->activeLeafDir << std::endl;
         if (activeRoot->IsTip()) {
             out << (activeRoot->GetTaxonIndex() + 1);
             activeRoot = 0L;
         }
         else {
+            int faldi = ((int) currBlob->activeLeafDir) | ((int) currBlob->focalEdgeDir) ;
+            TreeSweepDirection fullActiveLeafDir = TreeSweepDirection(faldi);
             if (currBlob->activeLeafDir == LEFT_OR_RIGHT || currBlob->activeLeafDir == ALL_DIR_BITS) {
                 if (currPrefix != '\0') {
                     currSuffix.push(currPrefix);
@@ -729,6 +784,27 @@ void writeNewickOfActive(std::ostream & out, const NxsSimpleNode *activeRoot) {
     }
 }
 
+const NxsSimpleNode * FindCentroidForActiveLeaves(const NxsSimpleNode *nd, long totalNumActiveLeaves, long ndScore) {
+    if (!nd->IsTip()) {
+        const NxsSimpleNode * child = LeftChild(*nd);
+        long childScore = CentroidScore(*child, totalNumActiveLeaves);
+        if (childScore < ndScore) {
+            return FindCentroidForActiveLeaves(child, totalNumActiveLeaves, childScore);
+        }
+        child = RightChild(*nd);
+        childScore = CentroidScore(*child, totalNumActiveLeaves);
+        if (childScore < ndScore) {
+            return FindCentroidForActiveLeaves(child, totalNumActiveLeaves, childScore);
+        }
+    }
+    const NxsSimpleNode * par = Parent(*nd);
+    assert(par);
+    long parScore = CentroidScore(*par, totalNumActiveLeaves);
+    if (parScore < ndScore) {
+        return FindCentroidForActiveLeaves(nd, totalNumActiveLeaves, parScore);
+    }
+    return nd;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // leftSubtreeRoot=====>v   v <=rightSubtreeRoot
 //                       \ /
@@ -931,12 +1007,16 @@ void DecomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     }
     NxsString n = namePrefix;
     n += ".0";
-    if (gEmitIntermediates && gOutputStream != 0L) {
+    if (gOutputStream != 0L && (sizeOfLeftSubproblem <= gMaxSubProblemSize || gEmitIntermediates)) {
         *gOutputStream << "Tree " << n << " = [&U] ";
         writeNewickOfActive(*gOutputStream, Parent(*rootLeft)); //activeRoot);
         *gOutputStream << ";\n";
     }
-
+    if (sizeOfLeftSubproblem > gMaxSubProblemSize) {
+        long sc = CentroidScore(*rootLeft, sizeOfLeftSubproblem);
+        const NxsSimpleNode * nextCentroid = FindCentroidForActiveLeaves(rootLeft, sizeOfLeftSubproblem, sc);
+        DecomposeAroundCentroidChild(preorderTraversal, nextCentroid, sizeOfLeftSubproblem, n);
+    }
 
 
 }
