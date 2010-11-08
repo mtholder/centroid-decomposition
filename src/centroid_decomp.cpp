@@ -390,7 +390,8 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
                                   const NxsSimpleNode * & futureNd,
                                   const LPECollection * & futureLPEC,
                                   TreeSweepDirection * futureBitToAdd,
-                                  TreeSweepDirection bitToAdd) {
+                                  TreeSweepDirection bitToAdd,
+                                  long numActiveAbove) {
     if (gDebugging) {
         std::cerr << "nonRecursiveFlagActivePathDown(currAnc=" << (long)currAnc->GetTaxonIndex() << ", newActiveLeaves=" << (long) newActiveLeaves << ')' << std::endl;
         if (currAnc->GetFirstChild()) {
@@ -413,6 +414,7 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
     assert(!currAnc->IsTip());
     bool hadLeft = false;
     bool hadRight = false;
+    currBlob->SetNumActiveLeavesAbove(numActiveAbove);
     if (currAnc == gRoot) {
         return;
     }
@@ -420,7 +422,6 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
         if (newActiveLeaves == 0L) {
             LPECollectionConstIt nalIt = currBlob->GetFullEdgeInfoConstPtr()->closestLeavesBelow.begin();
             currBlob->SetActiveEdgeInfoPtr(currBlob->GetFullEdgeInfoPtr());
-            currBlob->SetNumActiveLeavesAbove(gNumLeaves - currBlob->numLeavesAboveEdge);
             for (; nalIt != currBlob->GetFullEdgeInfoConstPtr()->closestLeavesBelow.end(); ++nalIt) {
                 const LeafPathElement & el = *nalIt;
                 if (el.dirToNext == LEFT_DIR) {
@@ -443,7 +444,6 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
         else {
             LPECollectionConstIt nalIt = newActiveLeaves->begin();
             currBlob->SetActiveEdgeInfoPtr(new EdgeDecompInfo());
-            currBlob->SetNumActiveLeavesAbove(currBlob->numLeavesAboveEdge - newActiveLeaves->size());
             for (; nalIt != newActiveLeaves->end(); ++nalIt) {
                 int indInCurr = nalIt->indexInNext;
                 const LeafPathElement & el = currBlob->GetFullEdgeInfoConstPtr()->closestLeavesBelow.at(indInCurr);
@@ -645,7 +645,11 @@ void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActi
 
 /// Sets focalEdgeDir for nodes along the path *EXCEPT* for currAnc
 /// \returns the "active Root"
-const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPECollection *newActiveLeaves, TreeSweepDirection dirOfOtherActive) {
+const NxsSimpleNode * flagActivePathDown(
+  const NxsSimpleNode *currAnc,
+  const LPECollection *newActiveLeaves,
+  TreeSweepDirection dirOfOtherActive, 
+  long numAboveParInLeftSubproblem) {
     if (gDebugging) {
         std::cerr << "flagActivePathDown(currAnc=" << (long) currAnc << ", newActiveLeaves=" <<(long)newActiveLeaves << ")" << std::endl;
         if (newActiveLeaves) {
@@ -685,7 +689,7 @@ const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPE
             const NxsSimpleNode * futureNd = 0L;
             const LPECollection * nextLPEC = 0L;
             const LPECollection * futureLPEC = 0L;
-            nonRecursiveFlagActivePathDown(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC, &futureBitToAdd, currBitToAdd);
+            nonRecursiveFlagActivePathDown(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC, &futureBitToAdd, currBitToAdd, numAboveParInLeftSubproblem);
             if (futureNd != 0) {
                 actRoot = futureNd;
                 assert(futureLPEC != 0);
@@ -706,6 +710,7 @@ const NxsSimpleNode * flagActivePathDown(const NxsSimpleNode *currAnc, const LPE
                 NdBlob * nextBlob = (NdBlob *) nextNd->scratch;
                 assert(nextBlob);
                 nextBlob->SetFocalEdgeDir(BELOW_DIR);
+                numAboveParInLeftSubproblem -= nextLPEC->size();
             }
         }
         else {
@@ -1069,11 +1074,15 @@ void decomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     flagActivePathUp(sibSubtreeRoot, &sibCommonLeafSet);
     debugCheckActiveFlags(sibSubtreeRoot, numSibChosen);
     TreeSweepDirection parOtherActiveDir = sibBlob->IsParentsLeftChild() ? LEFT_DIR_BIT : RIGHT_DIR_BIT;
-    const NxsSimpleNode * activeRoot = flagActivePathDown(parSubtreeRoot, &parCommonLeafSet, parOtherActiveDir);
+    long numActiveAboveCentroid = numRightChosen + origNumActiveLeavesAboveLeft;
+    long numAboveParInLeftSubproblem = numActiveAboveCentroid + numSibChosen;
+
+    const NxsSimpleNode * activeRoot = flagActivePathDown(parSubtreeRoot, &parCommonLeafSet, parOtherActiveDir, numAboveParInLeftSubproblem);
     const NxsSimpleNode * tmpNd = topCentroidChild;
+
     while (tmpNd != parSubtreeRoot) {
         NdBlob * tmpBlob = (NdBlob *)tmpNd->scratch;
-        tmpBlob->SetNumActiveLeavesAbove(numAboveChosen);
+        tmpBlob->SetNumActiveLeavesAbove(numActiveAboveCentroid);
         tmpNd = Parent(*tmpNd);
     }
     long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + origNumActiveLeavesAboveLeft;
