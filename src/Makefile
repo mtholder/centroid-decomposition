@@ -12,7 +12,7 @@
 
 # C preprocessor flags to include the parent of NCL's intsalled header directory.
 CPP_FLAGS = -I$(NCL_INSTALL_DIR)/include
-CXX_FLAGS = -g
+CXX_FLAGS = -g -Wall
 
 # linker flags to include the directory that hold libncl.
 LD_FLAGS = -L$(NCL_INSTALL_DIR)/lib/ncl
