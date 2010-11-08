@@ -443,7 +443,7 @@ void nonRecursiveFlagActivePathDown(const NxsSimpleNode * currAnc,
         else {
             LPECollectionConstIt nalIt = newActiveLeaves->begin();
             currBlob->SetActiveEdgeInfoPtr(new EdgeDecompInfo());
-            currBlob->SetNumActiveLeavesAbove(gNumLeaves - newActiveLeaves->size());
+            currBlob->SetNumActiveLeavesAbove(currBlob->numLeavesAboveEdge - newActiveLeaves->size());
             for (; nalIt != newActiveLeaves->end(); ++nalIt) {
                 int indInCurr = nalIt->indexInNext;
                 const LeafPathElement & el = currBlob->GetFullEdgeInfoConstPtr()->closestLeavesBelow.at(indInCurr);
