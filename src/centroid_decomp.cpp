@@ -693,6 +693,7 @@ const NxsSimpleNode * flagActivePathDown(
     std::stack<const LPECollection *> downLPECStack;
     std::stack<TreeSweepDirection> downBitStack;
     const NxsSimpleNode * actRoot = currAnc;
+    TreeDirection actRootFocalDir = LEFT_DIR;
     TreeSweepDirection futureBitToAdd = dirOfOtherActive;
     downStack.push(currAnc);
     downLPECStack.push(newActiveLeaves);
@@ -719,16 +720,21 @@ const NxsSimpleNode * flagActivePathDown(
             nonRecursiveFlagActivePathDown(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC, &futureBitToAdd, currBitToAdd, numAboveDeepest);
             NdBlob * currBlob = (NdBlob *)currNd->scratch;
             if (futureNd != 0) {
-                actRoot = futureNd;
                 downStack.push(futureNd);
                 downLPECStack.push(futureLPEC);
                 downBitStack.push(futureBitToAdd);
+
                 NdBlob * futureBlob = (NdBlob *)futureNd->scratch;
                 assert(futureBlob);
                 assert(currBlob);
                 futureBlob->SetFocalEdgeDir((currBlob->IsParentsLeftChild() ? LEFT_DIR : RIGHT_DIR));
             }
+            currBlob->SetNumActiveLeavesAbove(numAboveDeepest);
             if (nextNd != 0) {
+                actRoot = Parent(*nextNd);
+                assert(Parent(*currNd) == actRoot);
+                actRootFocalDir = (currBlob->IsParentsLeftChild() ? LEFT_DIR : RIGHT_DIR);
+                
                 upStack.push(nextNd);
                 upLPECStack.push(nextLPEC);
                 NdBlob * nextBlob = (NdBlob *) nextNd->scratch;
@@ -736,7 +742,6 @@ const NxsSimpleNode * flagActivePathDown(
                 nextBlob->SetFocalEdgeDir(BELOW_DIR);
                 numAboveDeepest += nextLPEC->size();
             }
-            currBlob->SetNumActiveLeavesAbove(numAboveDeepest);
         }
         else {
             const NxsSimpleNode * currNd = upStack.top();
@@ -760,6 +765,13 @@ const NxsSimpleNode * flagActivePathDown(
             }
         }
     }
+    NdBlob * actBlob = (NdBlob *)actRoot->scratch;
+    assert(actBlob);
+    actBlob->SetFocalEdgeDir(actRootFocalDir);
+    assert(!actRoot->IsTip());
+    NdBlob * leftBlob = (NdBlob *)(LeftChild(*actRoot)->scratch) ;
+    NdBlob * rightBlob = (NdBlob *)(RightChild(*actRoot)->scratch) ;
+    actBlob->SetNumActiveLeavesAbove(leftBlob->GetNumActiveLeavesAbove() + rightBlob->GetNumActiveLeavesAbove());
     return actRoot;
 }
 
@@ -1088,13 +1100,60 @@ void decomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
     ////////////////////////////////////////////////////////////////////////////
     if (gDebugging) {
         std::cerr << "Before flagging leftBlob->GetNumActiveLeavesAbove() = " << origNumActiveLeavesAboveLeft << ", currBlob->GetFullEdgeInfoConstPtr()->closestLeavesAbove.size() = " << leftBlob->GetFullEdgeInfoConstPtr()->closestLeavesAbove.size() << std::endl;
+        std::cerr << "numLeftChosen = " << numLeftChosen << ", numRightChosen = " << numRightChosen  << ", numSibChosen = " << numSibChosen << ",  numParChosen = " << numParChosen << std::endl;
+        std::cerr << "Common leafset: left: ";
+        writeLeafSet(std::cerr, leftCommonLeafSet);
+        std::cerr << "\nCommon leafset: right: ";
+        writeLeafSet(std::cerr, rightCommonLeafSet);
+        std::cerr << "\nCommon leafset: sib: ";
+        writeLeafSet(std::cerr, sibCommonLeafSet);
+        std::cerr << "\nCommon leafset: parSubtreeRoot: ";
+        writeLeafSet(std::cerr, parCommonLeafSet);
+        std::cerr << "\n";
     }
+
+    long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + origNumActiveLeavesAboveLeft;
+
     flagActivePathUp(leftSubtreeRoot, 0L);
+    if (gDebugging) {
+        std::cerr << "After flagging left\nleftBlob->GetNumActiveLeavesAbove() = " << leftBlob->GetNumActiveLeavesAbove() << ", sizeOfLeftSubproblem = " << sizeOfLeftSubproblem << std::endl;
+        std::cerr << "left Node: ";
+        debugNdPrint(std::cerr, *leftSubtreeRoot);
+        std::cerr << "\n";
+        debugPrintTree(std::cerr, leftSubtreeRoot);
+        std::cerr << "\n";
+    }
     debugCheckActiveFlags(leftSubtreeRoot, origNumActiveLeavesAboveLeft);
+    
     flagActivePathUp(rightSubtreeRoot, &rightCommonLeafSet);
+    if (gDebugging) {
+        std::cerr << "After flagging right\nright Node: ";
+        debugNdPrint(std::cerr, *rightSubtreeRoot);
+        std::cerr << "\n";
+        std::cerr << "topCentroidChild Node: ";
+        debugNdPrint(std::cerr, *topCentroidChild);
+        std::cerr << "\n";
+
+        std::cerr << "bottomCentroidChild Node: ";
+        debugNdPrint(std::cerr, *bottomCentroidChild);
+        std::cerr << "\n";
+        debugPrintTree(std::cerr, bottomCentroidChild);
+        std::cerr << "\n";
+    }
     debugCheckActiveFlags(rightSubtreeRoot, numRightChosen);
+
+
     flagActivePathUp(sibSubtreeRoot, &sibCommonLeafSet);
+    if (gDebugging) {
+        std::cerr << "After flagging sib\nsib Node: ";
+        debugNdPrint(std::cerr, *sibSubtreeRoot);
+        std::cerr << "\n";
+        debugPrintTree(std::cerr, sibSubtreeRoot);
+        std::cerr << "\n";
+    }
     debugCheckActiveFlags(sibSubtreeRoot, numSibChosen);
+
+
     TreeSweepDirection parOtherActiveDir = sibBlob->IsParentsLeftChild() ? LEFT_DIR_BIT : RIGHT_DIR_BIT;
     long numActiveAboveCentroid = numRightChosen + origNumActiveLeavesAboveLeft;
     long numAboveParInLeftSubproblem = numActiveAboveCentroid + numSibChosen;
@@ -1108,51 +1167,16 @@ void decomposeAroundCentroidChild(std::vector<const NxsSimpleNode *> &preorderTr
 
 
     const NxsSimpleNode * activeRoot = flagActivePathDown(parSubtreeRoot, &parCommonLeafSet, parOtherActiveDir, numAboveParInLeftSubproblem);
-    
-    long sizeOfLeftSubproblem = numBelowChosen + numRightChosen + origNumActiveLeavesAboveLeft;
-
     if (gDebugging) {
-        std::cerr << "numLeftChosen = " << numLeftChosen << ", numRightChosen = " << numRightChosen  << ", numSibChosen = " << numSibChosen << ",  numParChosen = " << numParChosen << std::endl;
-        std::cerr << "leftBlob->GetNumActiveLeavesAbove() = " << leftBlob->GetNumActiveLeavesAbove() << ", sizeOfLeftSubproblem = " << sizeOfLeftSubproblem << std::endl;
-        std::cerr << "Common leafset: left: ";
-        writeLeafSet(std::cerr, leftCommonLeafSet);
-        std::cerr << "\nCommon leafset: right: ";
-        writeLeafSet(std::cerr, rightCommonLeafSet);
-        std::cerr << "\nCommon leafset: sib: ";
-        writeLeafSet(std::cerr, sibCommonLeafSet);
-        std::cerr << "\nCommon leafset: parSubtreeRoot: ";
-        writeLeafSet(std::cerr, parCommonLeafSet);
-        std::cerr << "\n";
 
-        std::cerr << "topCentroidChild Node: ";
-        debugNdPrint(std::cerr, *topCentroidChild);
-        std::cerr << "\n";
-
-        std::cerr << "bottomCentroidChild Node: ";
-        debugNdPrint(std::cerr, *bottomCentroidChild);
-        std::cerr << "\n";
-
-        std::cerr << "left Node: ";
-        debugNdPrint(std::cerr, *leftSubtreeRoot);
-        std::cerr << "\n";
-
-
-        std::cerr << "right Node: ";
-        debugNdPrint(std::cerr, *rightSubtreeRoot);
-        std::cerr << "\n";
-
-
-        std::cerr << "sib Node: ";
-        debugNdPrint(std::cerr, *sibSubtreeRoot);
-        std::cerr << "\n";
-
-
-        std::cerr << "par Node: ";
+        std::cerr << "After flagging par\npar Node: ";
         debugNdPrint(std::cerr, *parSubtreeRoot);
         std::cerr << "\n";
         debugPrintTree(std::cerr, activeRoot);
         debugCheckActiveFlags(activeRoot, sizeOfLeftSubproblem);
     }
+    
+
     
         
     
@@ -1474,7 +1498,6 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
             debugPrintTree(std::cerr, gRoot);
         }
         debugCheckActiveFlags(gRoot, gNumLeaves);
-        return false;
         decomposeAroundCentroidChild(preorderTraversal, centroidChild, centroidChild, gNumLeaves, namePrefix);
     }
     catch (...) {
