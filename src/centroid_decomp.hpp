@@ -77,11 +77,36 @@ class EdgeDecompInfo {
         LPECollection closestLeavesBelow;
 };
 
+class NdBlob;
+
+class NdBlobSettingStruct {
+    public:
+        NdBlobSettingStruct(NdBlob *b, 
+                        TreeDirection focal,
+                        long numActiveAboveEdge,
+                        TreeSweepDirection activeLeafSweepDir,
+                        EdgeDecompInfo *edi)
+            :blob(b),
+            focalDir(focal),
+            numActiveAbove(numActiveAboveEdge),
+            activeLeafDir(activeLeafSweepDir),
+            edgeDecompInfo(edi) {
+        }
+        void SetObject();
+
+    public:
+        NdBlob * blob;
+        TreeDirection focalDir;
+        long numActiveAbove;
+        TreeSweepDirection activeLeafDir;
+        EdgeDecompInfo * edgeDecompInfo;
+};
 class NdBlob {
     public:
 
         NdBlob(bool parentsLeftC)
             :numActiveLeavesAboveEdge(-1),
+            activeLeafDir(NO_DIR_BIT),
             focalEdgeDir(BELOW_DIR),
             isParentsLeftChild(parentsLeftC){
             Reset();
@@ -104,10 +129,6 @@ class NdBlob {
             this->numActiveLeavesAboveEdge = n;
         }
 
-        void SetActiveEdgeInfoPtr(EdgeDecompInfo *n) {
-            this->edgeInfoStack.push(this->activeEdgeInfo);
-            this->activeEdgeInfo = n;
-        }
         
         EdgeDecompInfo * GetActiveEdgeInfoPtr() {
             return this->activeEdgeInfo;
@@ -124,11 +145,6 @@ class NdBlob {
         }
         
 
-        void SetActiveLeafDir(TreeSweepDirection n) {
-            this->activeLeafDirStack.push(this->activeLeafDir);
-            this->activeLeafDir = n;
-        }
-        
         TreeSweepDirection GetActiveLeafDir() const {
             return this->activeLeafDir;
         }
@@ -138,10 +154,6 @@ class NdBlob {
             return TreeSweepDirection(faldi);
         }
 
-        void SetFocalEdgeDir(TreeDirection n) {
-            this->focalEdgeDirStack.push(this->focalEdgeDir);
-            this->focalEdgeDir = n;
-        }
         
         TreeDirection GetFocalEdgeDir() const {
             return this->focalEdgeDir;
@@ -161,6 +173,16 @@ class NdBlob {
 
 
     private:
+        void SetActiveEdgeInfoPtr(EdgeDecompInfo *n) {
+            this->edgeInfoStack.push(this->activeEdgeInfo);
+            this->activeEdgeInfo = n;
+        }
+        void SetActiveLeafDir(TreeSweepDirection n);
+        
+        void SetFocalEdgeDir(TreeDirection n) {
+            this->focalEdgeDirStack.push(this->focalEdgeDir);
+            this->focalEdgeDir = n;
+        }
 
         EdgeDecompInfo fullEdgeInfo;
 
@@ -175,7 +197,11 @@ class NdBlob {
         std::stack<TreeDirection> focalEdgeDirStack;
 
         bool isParentsLeftChild;
-
+        
+        
+        friend const NxsSimpleNode *  downpassSettingNodesAboveFields(const NxsSimpleNode * rootLeft, const std::vector<const NxsSimpleNode *> & preorderTraversal,std::vector<NdBlob *> &gAllocedBlobs);
+        friend void uppassSettingNodesBelowFields(const std::vector<const NxsSimpleNode *> & preorderTraversal);
+        friend class NdBlobSettingStruct;
 //        long numLeavesBelowEdge;
 };
 
@@ -280,6 +306,8 @@ inline std::ostream & operator<<(std::ostream & o, const TreeSweepDirection &d) 
         o << "ALL_DIR_BITS";
     else if (d == THIS_NODE_DIR_BIT)
         o << "THIS_NODE_DIR_BIT";
+    else if (d == NO_DIR_BIT)
+        o << "NO_DIR_BIT";
     else {
         assert(false);
         o << "Unknown direction";
@@ -311,7 +339,17 @@ inline void writeLeafPathElementVector(std::ostream &o, const LPECollection &ls)
     o << "}";
 }
 
+inline void NdBlob::SetActiveLeafDir(TreeSweepDirection n) {
+    this->activeLeafDirStack.push(this->activeLeafDir);
+//    std::cerr << "pushed activeLeafDir = " << this->activeLeafDir  << " for ndblob " << (long) this << '\n';
+    this->activeLeafDir = n;
+}
 
+
+void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
+                                  const NxsSimpleNode *bottomCentroidChild,
+                                  long numActiveLeaves,
+                                  NxsString namePrefix);
 
 #endif  /*! defined(CENTROID_DECOMP_HPP) */
 
