@@ -33,7 +33,7 @@ class LeafPathElement {
         assert(nd);
         assert(nd->IsTip());
         leaf = nd;
-        iScore = 1;
+        iScore = 0;
         dirToNext = d;
         indexInNext = -1;
     }
@@ -43,16 +43,28 @@ class LeafPathElement {
         dirToNext = d;
         assert(index < INT_MAX);
         indexInNext = (int)index;
+        assert(nextEl.iScore >= 0);
+        iScore = nextEl.iScore + 1;
     }
 
     bool operator<(const LeafPathElement & other) const {
+        assert(this->iScore >= 0);
+        assert(other.iScore >= 0);
         return this->iScore < other.iScore;
+    }
+    
+    long GetScore() const {
+        return this->iScore;
+    }
+    void SetScore(long sc) {
+        this->iScore = sc;
     }
     public: // should be private
         const NxsSimpleNode * leaf;
-        long iScore;
         TreeDirection dirToNext;
         int indexInNext;
+    private:
+        long iScore;
 };
 typedef std::vector<LeafPathElement> LPECollection;
 typedef LPECollection::const_iterator LPECollectionConstIt;
@@ -236,6 +248,65 @@ inline void writeLeafSet(std::ostream &o, const LPECollection &ls) {
             o << ", ";
         const NxsSimpleNode &nd = *(i->leaf);
         o << nd.GetTaxonIndex();
+    }
+    o << "}";
+}
+inline std::ostream & operator<<(std::ostream & o, const TreeDirection &d) {
+    if (d == LEFT_DIR)
+        o << "LEFT_DIR";
+    else if (d == RIGHT_DIR)
+        o << "RIGHT_DIR";
+    else if (d == BELOW_DIR)
+        o << "BELOW_DIR";
+    else
+        o << "THIS_NODE_DIR";
+    return o;
+}
+
+inline std::ostream & operator<<(std::ostream & o, const TreeSweepDirection &d) {
+    if (d == LEFT_DIR_BIT)
+        o << "LEFT_DIR_BIT";
+    else if (d == RIGHT_DIR_BIT)
+        o << "RIGHT_DIR_BIT";
+    else if (d == LEFT_OR_RIGHT)
+        o << "LEFT_OR_RIGHT";
+    else if (d == BELOW_DIR_BIT)
+        o << "BELOW_DIR_BIT";
+    else if (d == LEFT_OR_BELOW)
+        o << "LEFT_OR_BELOW";
+    else if (d == RIGHT_OR_BELOW)
+        o << "RIGHT_OR_BELOW";
+    else if (d == ALL_DIR_BITS)
+        o << "ALL_DIR_BITS";
+    else if (d == THIS_NODE_DIR_BIT)
+        o << "THIS_NODE_DIR_BIT";
+    else {
+        assert(false);
+        o << "Unknown direction";
+        }
+    return o;
+}
+
+inline void writeLeafPathElement(std::ostream &o, const LeafPathElement &ls) {
+    o << "lpe{leaf=" << ls.leaf->GetTaxonIndex();
+    o << ", dirToNext=" << ls.dirToNext;
+    o << ", indexInNext=" << ls.indexInNext;
+    o << ", iScore=" << ls.GetScore() << '}';
+}
+inline std::ostream & operator<<(std::ostream & o, const LeafPathElement &lpe) {
+    writeLeafPathElement(o, lpe);
+    return o;
+}
+
+
+
+
+inline void writeLeafPathElementVector(std::ostream &o, const LPECollection &ls) {
+    o << "{";
+    for (LPECollectionConstIt i = ls.begin(); i != ls.end(); ++i) {
+        if (i != ls.begin())
+            o << ", ";
+        writeLeafPathElement(o, *i);
     }
     o << "}";
 }
