@@ -198,6 +198,14 @@ inline const NxsSimpleNode * Parent(const NxsSimpleNode &nd) {
     return lc;
 }
 
+inline const NxsSimpleNode * SibNode(const NxsSimpleNode &nd) {
+    const NxsSimpleNode *p = nd.GetParent();
+    assert(p);
+    if (((NdBlob *)nd.scratch)->IsParentsLeftChild())
+        return RightChild(*p);
+    return LeftChild(*p);
+}
+
 inline NdBlob * LeftBlob(const NxsSimpleNode &nd) {
     const NxsSimpleNode *lc = LeftChild(nd);
     assert(lc);
