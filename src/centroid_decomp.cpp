@@ -533,7 +533,14 @@ void nonRecursiveFlagActivePathUp(const NxsSimpleNode * currAnc,
         LPECollectionConstIt nalIt = currBlob->GetFullEdgeInfoConstPtr()->closestLeavesAbove.begin();
         currBlob->SetActiveEdgeInfoPtr(currBlob->GetFullEdgeInfoPtr());
         currBlob->SetNumActiveLeavesAbove(currBlob->numLeavesAboveEdge);
-        for (; nalIt != currBlob->GetFullEdgeInfoConstPtr()->closestLeavesAbove.end(); ++nalIt) {
+        currBlob->SetActiveLeafDir(LEFT_OR_RIGHT);
+        nextNd = LeftChild(*currAnc);
+        nextLPEC = 0L;
+        futureNd = RightChild(*currAnc);
+        futureLPEC = 0L;
+        return;
+
+/*        for (; nalIt != currBlob->GetFullEdgeInfoConstPtr()->closestLeavesAbove.end(); ++nalIt) {
             const LeafPathElement & el = *nalIt;
             if (el.dirToNext == LEFT_DIR) {
                 currBlob->lpeScratch1.push_back(el);
@@ -543,7 +550,7 @@ void nonRecursiveFlagActivePathUp(const NxsSimpleNode * currAnc,
                 currBlob->lpeScratch2.push_back(el);
             }
         }
-
+*/
     }
     else {
         LPECollectionConstIt nalIt = newActiveLeaves->begin();
@@ -621,7 +628,6 @@ void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActi
         const LPECollection * futureLPEC = 0L;
         nonRecursiveFlagActivePathUp(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC);
         if (futureNd != 0) {
-            assert(futureLPEC != 0);
             ndStack.push(futureNd);
             lpecStack.push(futureLPEC);
 
@@ -631,7 +637,6 @@ void flagActivePathUp(const NxsSimpleNode *currAnc, const LPECollection *newActi
            
         }
         if (nextNd != 0) {
-            assert(nextLPEC != 0);
             ndStack.push(nextNd);
             lpecStack.push(nextLPEC);
 
@@ -692,7 +697,6 @@ const NxsSimpleNode * flagActivePathDown(
             nonRecursiveFlagActivePathDown(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC, &futureBitToAdd, currBitToAdd, numAboveParInLeftSubproblem);
             if (futureNd != 0) {
                 actRoot = futureNd;
-                assert(futureLPEC != 0);
                 downStack.push(futureNd);
                 downLPECStack.push(futureLPEC);
                 downBitStack.push(futureBitToAdd);
@@ -704,7 +708,6 @@ const NxsSimpleNode * flagActivePathDown(
                 futureBlob->SetFocalEdgeDir((currBlob->IsParentsLeftChild() ? LEFT_DIR : RIGHT_DIR));
             }
             if (nextNd != 0) {
-                assert(nextLPEC != 0);
                 upStack.push(nextNd);
                 upLPECStack.push(nextLPEC);
                 NdBlob * nextBlob = (NdBlob *) nextNd->scratch;
@@ -726,12 +729,10 @@ const NxsSimpleNode * flagActivePathDown(
             const LPECollection * futureLPEC = 0L;
             nonRecursiveFlagActivePathUp(currNd, currLPEC, nextNd, nextLPEC, futureNd, futureLPEC);
             if (futureNd != 0) {
-                assert(futureLPEC != 0);
                 upStack.push(futureNd);
                 upLPECStack.push(futureLPEC);
             }
             if (nextNd != 0) {
-                assert(nextLPEC != 0);
                 upStack.push(nextNd);
                 upLPECStack.push(nextLPEC);
             }
