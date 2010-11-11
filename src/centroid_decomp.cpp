@@ -861,8 +861,11 @@ void writeNewickOfActive(std::ostream & out, const NxsSimpleNode *activeRoot) {
                 if (currPrefix != '\0') {
                     currSuffix.push(currPrefix);
                 }
-                if (gDebugging)
-                    out << "[i" << activeRoot->GetTaxonIndex() << ']';
+#               if defined(DEBUGGING_OUTPUT)
+                    if (gDebugging) {
+                        out << "[i" << activeRoot->GetTaxonIndex() << ']';
+                    }
+#               endif
                 currSuffix.push(')');
                 ndStack.push(NdSuffixPair(RightChild(*activeRoot), currSuffix));
                 currSuffix = std::stack<char>();
@@ -1354,7 +1357,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
                         rightSubtreeRoot, &rightCommonLeafSet,
                         sibSubtreeRoot, &sibCommonLeafSet,
                         parSubtreeRoot, &parCommonLeafSet,
-                        namePrefix,
+                        n,
                         numActiveLeaves);
 
     if (gDebugging) {
@@ -1370,9 +1373,43 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
                         rightSubtreeRoot, 0L,
                         sibSubtreeRoot, &sibCommonLeafSet,
                         parSubtreeRoot, &parCommonLeafSet,
-                        namePrefix,
+                        n,
                         numActiveLeaves);
 
+    if (gDebugging) {
+        std::cerr << "after right, before sib decomposition\n";
+        debugPrintTree(std::cerr, effectiveRoot);
+        debugCheckActiveFlags(effectiveRoot, numActiveLeaves);
+    }
+    n = namePrefix;
+    n += ".2";
+
+    doDecomposition(topCentroidChild,
+                        leftSubtreeRoot, &leftCommonLeafSet,
+                        rightSubtreeRoot, &rightCommonLeafSet,
+                        sibSubtreeRoot, 0L,
+                        parSubtreeRoot, &parCommonLeafSet,
+                        n,
+                        numActiveLeaves);
+    if (gDebugging) {
+        std::cerr << "after sib, before parent decomposition\n";
+        debugPrintTree(std::cerr, effectiveRoot);
+        debugCheckActiveFlags(effectiveRoot, numActiveLeaves);
+    }
+    n = namePrefix;
+    n += ".3";
+    doDecomposition(topCentroidChild,
+                        leftSubtreeRoot, &leftCommonLeafSet,
+                        rightSubtreeRoot, &rightCommonLeafSet,
+                        sibSubtreeRoot, &sibCommonLeafSet,
+                        parSubtreeRoot, 0L,
+                        n,
+                        numActiveLeaves);
+    if (gDebugging) {
+        std::cerr << "after parent decomposition\n";
+        debugPrintTree(std::cerr, effectiveRoot);
+        debugCheckActiveFlags(effectiveRoot, numActiveLeaves);
+    }
 }
 
 void uppassSettingNodesBelowFields(const std::vector<const NxsSimpleNode *> & preorderTraversal) {
@@ -1671,127 +1708,127 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
 int readInput(std::istream &inp, MultiFormatReader::DataFormatType fmt, const std::string & filename) {
     assert(gNexusReader == 0L);
     int blockFlag = PublicNexusReader::NEXUS_TAXA_BLOCK_BIT | PublicNexusReader::NEXUS_TREES_BLOCK_BIT;
-	gNexusReader = new MultiFormatReader(blockFlag, NxsReader::WARNINGS_TO_STDERR);
-	if (!gVerbose)
-		gNexusReader->SetWarningOutputLevel(NxsReader::SKIPPING_CONTENT_WARNING);
-	NxsTreesBlock * treesB = gNexusReader->GetTreesBlockTemplate();
-	assert(treesB);
-	treesB->SetAllowImplicitNames(true);
+    gNexusReader = new MultiFormatReader(blockFlag, NxsReader::WARNINGS_TO_STDERR);
+    if (!gVerbose)
+        gNexusReader->SetWarningOutputLevel(NxsReader::SKIPPING_CONTENT_WARNING);
+    NxsTreesBlock * treesB = gNexusReader->GetTreesBlockTemplate();
+    assert(treesB);
+    treesB->SetAllowImplicitNames(true);
     treesB->setValidationCallbacks(treeReadCallback, 0L);
     treesB->SetTreatAsRootedByDefault(false);
     try {
         gNexusReader->ReadStream(inp, fmt, filename.c_str());
     }
     catch (NxsException & x) {
-		std::cerr << "Error:\n " << x.msg << std::endl;
-		std::cerr << "File: \"" << filename << '\"' << std::endl;
-		if (x.line > 0 || x.pos > 0)
-			std::cerr << "At line " << x.line << ", column (approximately) " << x.col << " (and file position "<< x.pos << ")" << std::endl;
-		return 14;
+        std::cerr << "Error:\n " << x.msg << std::endl;
+        std::cerr << "File: \"" << filename << '\"' << std::endl;
+        if (x.line > 0 || x.pos > 0)
+            std::cerr << "At line " << x.line << ", column (approximately) " << x.col << " (and file position "<< x.pos << ")" << std::endl;
+        return 14;
     }
     catch (...) {
         std::cerr << gErrMsgPrefix << "Unknown exception generated when reading \"" << filename << '\"' << std::endl;
-		return 15;
+        return 15;
     }
     return 0;
 }
 
 void printHelp(std::ostream & out)
-	{
-	out << gVersionString << "\n";
-	out << "Reads a file with a tree description and produces a decomposition of the tree\n";
-	out << "into smaller trees.  Subject to the following constraints:\n";
-	out << "    1. No tree will have more than MAX_SUBTREE_SIZE leaves\n";
-	out << "    2. Trees will be written in hierarchichal groups (with their names\n";
-	out << "           indicating their group membership)\n";
-	out << "    3. Within each group, each tree will contain a common subset of leaves.\n";
-	out << "           The size of this subset will be at least MIN_LEAF_INTERSECTION_SIZE.\n";
-	out << "    4. All leaves in the original tree will be present in at least one output tree.\n";
-	out << "\nThe input tree must be fully-resolved (binary).\n";
-	out << "\nDecomposition is produced by recursively breaking the tree around centroid\n";
-	out << "    edge and striving to include a group of MIN_LEAF_INTERSECTION_SIZE/4 leaves\n";
-	out << "    from each induced subtree into the smaller tree (if some subtrees are smaller\n";
-	out << "    than MIN_LEAF_INTERSECTION_SIZE/4 then more leaves will be included from their\n";
-	out << "    \"sister\" subtree).\n";
-	out << "\nAt each step, leaves closest to the decomposition edge are retained.  This distance.\n";
-	out << "    can be topological or based on EDGE_LENGTHS (-e option below; in this case all edges\n";
-	out << "    in the tree must have edge lengths).\n";
-	out << "\nCommand-line flags:\n\n";
-	out << "    -d debugging output.\n\n";
-	out << "    -e use EDGE_LENGTHS in the shortest leaf calculations.\n\n";
-	out << "    -f<format> specifies the input file format expected:\n";
-	out << "            -fnexus     NEXUS (this is also the default)\n";
-	out << "            -fphyliptree    Phylip tree file (simple newick string)\n";
-	out << "            -frelaxedphyliptree Relaxed Phylip name restrictions\n";
-	out << "    -h on the command line shows this help message.\n\n";
-	out << "    -i<non-negative integer> specifies MIN_LEAF_INTERSECTION_SIZE\n";
-	out << "    -m<non-negative integer> specifies MAX_SUBTREE_SIZE\n";
-	out << "    -v verbose output to stdandard error.\n\n";
+    {
+    out << gVersionString << "\n";
+    out << "Reads a file with a tree description and produces a decomposition of the tree\n";
+    out << "into smaller trees.  Subject to the following constraints:\n";
+    out << "    1. No tree will have more than MAX_SUBTREE_SIZE leaves\n";
+    out << "    2. Trees will be written in hierarchichal groups (with their names\n";
+    out << "           indicating their group membership)\n";
+    out << "    3. Within each group, each tree will contain a common subset of leaves.\n";
+    out << "           The size of this subset will be at least MIN_LEAF_INTERSECTION_SIZE.\n";
+    out << "    4. All leaves in the original tree will be present in at least one output tree.\n";
+    out << "\nThe input tree must be fully-resolved (binary).\n";
+    out << "\nDecomposition is produced by recursively breaking the tree around centroid\n";
+    out << "    edge and striving to include a group of MIN_LEAF_INTERSECTION_SIZE/4 leaves\n";
+    out << "    from each induced subtree into the smaller tree (if some subtrees are smaller\n";
+    out << "    than MIN_LEAF_INTERSECTION_SIZE/4 then more leaves will be included from their\n";
+    out << "    \"sister\" subtree).\n";
+    out << "\nAt each step, leaves closest to the decomposition edge are retained.  This distance.\n";
+    out << "    can be topological or based on EDGE_LENGTHS (-e option below; in this case all edges\n";
+    out << "    in the tree must have edge lengths).\n";
+    out << "\nCommand-line flags:\n\n";
+    out << "    -d debugging output.\n\n";
+    out << "    -e use EDGE_LENGTHS in the shortest leaf calculations.\n\n";
+    out << "    -f<format> specifies the input file format expected:\n";
+    out << "            -fnexus     NEXUS (this is also the default)\n";
+    out << "            -fphyliptree    Phylip tree file (simple newick string)\n";
+    out << "            -frelaxedphyliptree Relaxed Phylip name restrictions\n";
+    out << "    -h on the command line shows this help message.\n\n";
+    out << "    -i<non-negative integer> specifies MIN_LEAF_INTERSECTION_SIZE\n";
+    out << "    -m<non-negative integer> specifies MAX_SUBTREE_SIZE\n";
+    out << "    -v verbose output to stdandard error.\n\n";
 }
 
 
 int main(int argc, char * argv[]) {
-	NxsReader::setNCLCatchesSignals(true);
-	MultiFormatReader::DataFormatType f(MultiFormatReader::NEXUS_FORMAT);
+    NxsReader::setNCLCatchesSignals(true);
+    MultiFormatReader::DataFormatType f(MultiFormatReader::NEXUS_FORMAT);
     std::string formatName("NEXUS");
 
-	for (int i = 1; i < argc; ++i) {
-		const char * filepath = argv[i];
-		const unsigned slen = strlen(filepath);
-		if (slen < 2 || filepath[0] != '-')
-			continue;
-		if (filepath[1] == 'h') {
-			printHelp(std::cout);
-			return 0;
-		}
-		else if (filepath[1] == 'd') {
-		    gDebugging = true;
-			gVerbose = true;
-			gEmitIntermediates = true;
-		}
-		else if (filepath[1] == 'v')
-			gVerbose = true;
-		else if (filepath[1] == 'e')
-			gUseEdgeLengths = true;
+    for (int i = 1; i < argc; ++i) {
+        const char * filepath = argv[i];
+        const unsigned slen = strlen(filepath);
+        if (slen < 2 || filepath[0] != '-')
+            continue;
+        if (filepath[1] == 'h') {
+            printHelp(std::cout);
+            return 0;
+        }
+        else if (filepath[1] == 'd') {
+            gDebugging = true;
+            gVerbose = true;
+            gEmitIntermediates = true;
+        }
+        else if (filepath[1] == 'v')
+            gVerbose = true;
+        else if (filepath[1] == 'e')
+            gUseEdgeLengths = true;
         else if (filepath[1] == 'i') {
-			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gLeafSetIntersectionSize))) {
-				std::cerr << gErrMsgPrefix << "Expecting an integer -i\n" << std::endl;
-				return 3;
-			}
-		}
+            if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gLeafSetIntersectionSize))) {
+                std::cerr << gErrMsgPrefix << "Expecting an integer -i\n" << std::endl;
+                return 3;
+            }
+        }
         else if (filepath[1] == 'm') {
-			if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gMaxSubProblemSize))) {
-				std::cerr << gErrMsgPrefix << "Expecting an integer -m\n" << std::endl;
-				return 4;
-			}
-		}
+            if ((slen == 2) || (!NxsString::to_long(filepath + 2, &gMaxSubProblemSize))) {
+                std::cerr << gErrMsgPrefix << "Expecting an integer -m\n" << std::endl;
+                return 4;
+            }
+        }
         else if (filepath[1] == 'f') {
-			f = MultiFormatReader::UNSUPPORTED_FORMAT;
-			if (slen > 2) {
-				formatName.assign(filepath + 2, slen - 2);
-				f =  MultiFormatReader::formatNameToCode(formatName);
-				if ((f != MultiFormatReader::NEXUS_FORMAT)
-				    && (f != MultiFormatReader::PHYLIP_TREE_FORMAT)
-				    && (f != MultiFormatReader::RELAXED_PHYLIP_TREE_FORMAT)
-				   ){
-					std::cerr << gErrMsgPrefix << "Unsupported tree file format \"" << formatName << "\" after -f\n" << std::endl;
-					return 11;
+            f = MultiFormatReader::UNSUPPORTED_FORMAT;
+            if (slen > 2) {
+                formatName.assign(filepath + 2, slen - 2);
+                f =  MultiFormatReader::formatNameToCode(formatName);
+                if ((f != MultiFormatReader::NEXUS_FORMAT)
+                    && (f != MultiFormatReader::PHYLIP_TREE_FORMAT)
+                    && (f != MultiFormatReader::RELAXED_PHYLIP_TREE_FORMAT)
+                   ){
+                    std::cerr << gErrMsgPrefix << "Unsupported tree file format \"" << formatName << "\" after -f\n" << std::endl;
+                    return 11;
                 }
             }
-			if (f == MultiFormatReader::UNSUPPORTED_FORMAT) {
-				std::cerr << gErrMsgPrefix << "Expecting a format after -f\n" << std::endl;
-				return 12;
+            if (f == MultiFormatReader::UNSUPPORTED_FORMAT) {
+                std::cerr << gErrMsgPrefix << "Expecting a format after -f\n" << std::endl;
+                return 12;
             }
         }
         else if (strcmp(filepath, "--version") == 0) {
                 std::cout << gVersionString << std::endl;
                 return 0;
-			}
-		else {
+            }
+        else {
             std::cerr << gErrMsgPrefix << "Unexpected command-line option: \"" << filepath<< "\"" << std::endl;
-			return 5;
-		}
-	}
+            return 5;
+        }
+    }
     if (gLeafSetIntersectionSize < 4) {
         std::cerr << gErrMsgPrefix << "Minimum size of the leaf intersection set must 4" << std::endl;
         return 6;
@@ -1802,56 +1839,56 @@ int main(int argc, char * argv[]) {
     }
 
 
-	bool filefound = false;
-	std::string filename("<standard input>");
-	for (int i = 1; i < argc; ++i) {
-		const char * filepath = argv[i];
-		const unsigned slen = strlen(filepath);
-		if (slen < 1){
+    bool filefound = false;
+    std::string filename("<standard input>");
+    for (int i = 1; i < argc; ++i) {
+        const char * filepath = argv[i];
+        const unsigned slen = strlen(filepath);
+        if (slen < 1){
             std::cerr << gErrMsgPrefix << "Unexpected empty string as command-line option " << std::endl;
-			return 8;
-		}
-		if (filepath[0] == '-')
-			continue;
+            return 8;
+        }
+        if (filepath[0] == '-')
+            continue;
         if (filefound) {
             std::cerr << gErrMsgPrefix << "Expecting only one file to read!" << std::endl;
-			return 9;
+            return 9;
         }
         filename.assign(filepath);
         filefound = true;
     }
 
 
-	std::istream * inpStream = &(std::cin);
-	std::ifstream inFileStream;
+    std::istream * inpStream = &(std::cin);
+    std::ifstream inFileStream;
 
 
-	if (filefound) {
-	    inFileStream.open(filename.c_str());
-	    if (!inFileStream.good()) {
+    if (filefound) {
+        inFileStream.open(filename.c_str());
+        if (!inFileStream.good()) {
             std::cerr << gErrMsgPrefix << "Could not open the file \""<< filename << '\"' << std::endl;
-			return 10;
-	    }
-	    inpStream = &inFileStream;
-	}
+            return 10;
+        }
+        inpStream = &inFileStream;
+    }
 
-	if (gVerbose) {
-	    // write invocation to std error, to make it easy to rerun...
-	    std::cerr << argv[0] << " -v";
-	    if (gUseEdgeLengths) {
-	        std::cerr << " -e";
-	    }
-	    std::cerr << " -i" << gLeafSetIntersectionSize;
-	    std::cerr << " -m" << gMaxSubProblemSize;
-	    std::cerr << " -f" << formatName;
-	    if (filefound) {
-	        std::cerr << " \"" << filename  << "\"";
-	    }
-	    std::cerr << std::endl;
-	}
-	if (gVerbose && !filefound) {
-	    std::cerr << gErrMsgPrefix << "Reading from stdin..." << std::endl;
-	}
+    if (gVerbose) {
+        // write invocation to std error, to make it easy to rerun...
+        std::cerr << argv[0] << " -v";
+        if (gUseEdgeLengths) {
+            std::cerr << " -e";
+        }
+        std::cerr << " -i" << gLeafSetIntersectionSize;
+        std::cerr << " -m" << gMaxSubProblemSize;
+        std::cerr << " -f" << formatName;
+        if (filefound) {
+            std::cerr << " \"" << filename  << "\"";
+        }
+        std::cerr << std::endl;
+    }
+    if (gVerbose && !filefound) {
+        std::cerr << gErrMsgPrefix << "Reading from stdin..." << std::endl;
+    }
 
     gMaxNumLeafPaths = gLeafSetIntersectionSize; //@TODO this could be set to something smaller. gLeafSetIntersectionSize / 2, perhaps?
 
