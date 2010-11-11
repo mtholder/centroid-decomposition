@@ -794,7 +794,13 @@ const NxsSimpleNode * flagActivePathDown(
                 
                 upStack.push(nextNd);
                 upLPECStack.push(nextLPEC);
-                numAboveDeepest += nextLPEC->size();
+                if (nextLPEC == 0L) {
+                    numAboveDeepest += ((NdBlob *)nextNd->scratch)->GetNumLeavesAbove();
+                }
+                else {
+                    numAboveDeepest += nextLPEC->size();
+                }
+                
             }
         }
         else {
@@ -1456,9 +1462,11 @@ void uppassSettingNodesBelowFields(const std::vector<const NxsSimpleNode *> & pr
             }
             if (IsRootChild(*nd)) {
                 assert(edgeInfo->closestLeavesBelow.size() == 1);
-                writeLeafPathElementVector(std::cerr, edgeInfo->closestLeavesBelow); std::cerr << '\n';
-                writeLeafPathElementVector(std::cerr, ((NdBlob*)gRoot->scratch)->GetActiveEdgeInfoPtr()->closestLeavesAbove); std::cerr << '\n';
-                writeLeafPathElementVector(std::cerr, ((NdBlob*)(LeftChild(*gRoot)->scratch))->GetActiveEdgeInfoPtr()->closestLeavesAbove); std::cerr << '\n';
+                if (gDebugging) {
+                    writeLeafPathElementVector(std::cerr, edgeInfo->closestLeavesBelow); std::cerr << '\n';
+                    writeLeafPathElementVector(std::cerr, ((NdBlob*)gRoot->scratch)->GetActiveEdgeInfoPtr()->closestLeavesAbove); std::cerr << '\n';
+                    writeLeafPathElementVector(std::cerr, ((NdBlob*)(LeftChild(*gRoot)->scratch))->GetActiveEdgeInfoPtr()->closestLeavesAbove); std::cerr << '\n';
+                }
                 assert(edgeInfo->closestLeavesBelow[0].GetScore() == 1);
             }
         }
@@ -1894,7 +1902,7 @@ int main(int argc, char * argv[]) {
 
     gFloorHalfIntersectionSize = gLeafSetIntersectionSize/2;
 
-    int rc =  readInput(*inpStream, f, filename);
+    int rc = readInput(*inpStream, f, filename);
 
     if (rc == 0 && gOutputStream != 0L) {
         *gOutputStream << "END;\n";
