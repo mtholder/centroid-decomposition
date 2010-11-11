@@ -85,12 +85,16 @@ class NdBlobSettingStruct {
                         TreeDirection focal,
                         long numActiveAboveEdge,
                         TreeSweepDirection activeLeafSweepDir,
-                        EdgeDecompInfo *edi)
+                        EdgeDecompInfo *edi,
+                        std::set<NdBlob *> &altered
+                        )
             :blob(b),
             focalDir(focal),
             numActiveAbove(numActiveAboveEdge),
             activeLeafDir(activeLeafSweepDir),
-            edgeDecompInfo(edi) {
+            edgeDecompInfo(edi),
+            alteredBlobs(altered)
+            {
         }
         void SetObject();
 
@@ -100,6 +104,7 @@ class NdBlobSettingStruct {
         long numActiveAbove;
         TreeSweepDirection activeLeafDir;
         EdgeDecompInfo * edgeDecompInfo;
+        std::set<NdBlob *> & alteredBlobs;
 };
 class NdBlob {
     public:
@@ -123,10 +128,6 @@ class NdBlob {
         }
         long GetNumActiveLeavesAbove() const {
             return this->numActiveLeavesAboveEdge;
-        }
-        void SetNumActiveLeavesAbove(long n){
-            this->numActiveAboveStack.push(this->numActiveLeavesAboveEdge);
-            this->numActiveLeavesAboveEdge = n;
         }
 
         
@@ -182,6 +183,10 @@ class NdBlob {
         void SetFocalEdgeDir(TreeDirection n) {
             this->focalEdgeDirStack.push(this->focalEdgeDir);
             this->focalEdgeDir = n;
+        }
+        void SetNumActiveLeavesAbove(long n){
+            this->numActiveAboveStack.push(this->numActiveLeavesAboveEdge);
+            this->numActiveLeavesAboveEdge = n;
         }
 
         EdgeDecompInfo fullEdgeInfo;
@@ -342,6 +347,7 @@ inline void writeLeafPathElementVector(std::ostream &o, const LPECollection &ls)
 inline void NdBlob::SetActiveLeafDir(TreeSweepDirection n) {
     this->activeLeafDirStack.push(this->activeLeafDir);
 //    std::cerr << "pushed activeLeafDir = " << this->activeLeafDir  << " for ndblob " << (long) this << '\n';
+
     this->activeLeafDir = n;
 }
 
@@ -349,7 +355,41 @@ inline void NdBlob::SetActiveLeafDir(TreeSweepDirection n) {
 void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
                                   const NxsSimpleNode *bottomCentroidChild,
                                   long numActiveLeaves,
-                                  NxsString namePrefix);
+                                  NxsString namePrefix,
+                                  const NxsSimpleNode * effectiveRoot);
+
+void debugBlobPrint(std::ostream & o, const NdBlob * b);
+void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi);
+
+
+inline void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi) {
+    o << "edi.CLA = ";
+    writeLeafSet(o, edi.closestLeavesAbove);
+    o << "; edi.CLB = ";
+    writeLeafSet(o, edi.closestLeavesBelow);
+};
+
+
+inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
+    o << "b.address = " << (long) b;
+    o << " b#LvsAbove = " << b->GetNumLeavesAbove();
+    o << " b#ActLvsAbove = "<< b->GetNumActiveLeavesAbove();
+    o << " b.actDir = "<< b->GetActiveLeafDir();
+    o << " b.focalDir = "<< b->GetFocalEdgeDir();
+    o << " b.isLeftC = "<< (b->IsParentsLeftChild() ? "T" : "F");
+    o << " b.fullEdgeInfo = [";
+    writeEdgeDecompInfo(o, *(b->GetFullEdgeInfoConstPtr()));
+    o << "]";
+    if (b->GetFullEdgeInfoConstPtr() == b->GetActiveEdgeInfoConstPtr()) {
+    o << " b.activeEdgeInfo = b.fullEdgeInfo";
+    }
+    else {
+        o << " b.activeEdgeInfo = [";
+        writeEdgeDecompInfo(o, *b->GetActiveEdgeInfoConstPtr());
+        o << "]";
+    }
+}
+
 
 #endif  /*! defined(CENTROID_DECOMP_HPP) */
 
