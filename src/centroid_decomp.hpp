@@ -73,8 +73,62 @@ std::ostream & operator<<(std::ostream &, const LeafPathElement &);
 
 class EdgeDecompInfo {
     public:
+        const LPECollection & GetClosestLeavesAbove() const {
+            if (!aboveInitialized) {
+                std::cerr << "GetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                assert(aboveInitialized);
+            }
+            return closestLeavesAbove;
+        }
+        const LPECollection & GetClosestLeavesBelow() const {
+            if (!belowInitialized) {
+                std::cerr << "GetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                assert(belowInitialized);
+            }
+            assert(belowInitialized);
+            return closestLeavesBelow;
+        }
+
+        LPECollection & GetClosestLeavesAboveRef() {
+            return closestLeavesAbove;
+        }
+        LPECollection & GetClosestLeavesBelowRef() {
+            return closestLeavesBelow;
+        }
+        void SetClosestLeavesAbove(const LPECollection & o) {
+            SetAboveInitialized(true);
+            closestLeavesAbove = o;
+        }
+        void SetClosestLeavesBelow(const LPECollection & o) {
+            SetBelowInitialized(true);
+            closestLeavesBelow = o;
+        }
+
+        void SetAboveInitialized(bool v=true) {
+            this->aboveInitialized = v;
+        }
+        void SetBelowInitialized(bool v=true) {
+            this->belowInitialized = v;
+            
+        }
+        
+        
+        EdgeDecompInfo(const char *filename, int lineInit)
+            :fn(filename),
+            line(lineInit),
+            aboveInitialized(false),
+            belowInitialized(false)
+            {}
+            
+    private:
+        std::string fn ; //debugging purposes only -- the line at which the instance was created.
+        int line ; //debugging purposes only -- the line at which the instance was created.
+    
         LPECollection closestLeavesAbove;
         LPECollection closestLeavesBelow;
+        bool aboveInitialized;
+        bool belowInitialized;
+        
 };
 
 class NdBlob;
@@ -86,8 +140,7 @@ class NdBlobSettingStruct {
                         long numActiveAboveEdge,
                         TreeSweepDirection activeLeafSweepDir,
                         EdgeDecompInfo *edi,
-                        std::set<NdBlob *> &altered
-                        )
+                        std::set<NdBlob *> &altered)
             :blob(b),
             focalDir(focal),
             numActiveAbove(numActiveAboveEdge),
@@ -110,7 +163,8 @@ class NdBlob {
     public:
 
         NdBlob(bool parentsLeftC)
-            :numActiveLeavesAboveEdge(-1),
+            :fullEdgeInfo(__FILE__, __LINE__),
+            numActiveLeavesAboveEdge(-1),
             activeLeafDir(NO_DIR_BIT),
             focalEdgeDir(BELOW_DIR),
             isParentsLeftChild(parentsLeftC){
@@ -364,9 +418,9 @@ void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi);
 
 inline void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi) {
     o << "edi.CLA = ";
-    writeLeafSet(o, edi.closestLeavesAbove);
+    writeLeafSet(o, edi.GetClosestLeavesAbove());
     o << "; edi.CLB = ";
-    writeLeafSet(o, edi.closestLeavesBelow);
+    writeLeafSet(o, edi.GetClosestLeavesBelow());
 };
 
 
