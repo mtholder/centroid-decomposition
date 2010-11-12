@@ -1672,6 +1672,7 @@ const NxsSimpleNode * downpassSettingNodesAboveFields(const NxsSimpleNode * root
         else {
             nb->numLeavesAboveEdge = LeftBlob(*nd)->numLeavesAboveEdge + RightBlob(*nd)->numLeavesAboveEdge;
             nb->SetNumActiveLeavesAbove(nb->numLeavesAboveEdge);
+            mergeShortLeavesLists(*nd, LEFT_OR_RIGHT, *LeftChild(*nd), *RightChild(*nd));
             int currSC = CentroidScore(*nd, gNumLeaves);
             if (currSC < minCentroidScore) {
                 centroidChild = nd;
@@ -1680,7 +1681,6 @@ const NxsSimpleNode * downpassSettingNodesAboveFields(const NxsSimpleNode * root
                     std::cerr << "New Min Centroid Score = " << minCentroidScore << std::endl;
                 }
             }
-            mergeShortLeavesLists(*nd, LEFT_OR_RIGHT, *LeftChild(*nd), *RightChild(*nd));
 
         }
     }
@@ -1696,10 +1696,12 @@ const NxsSimpleNode * downpassSettingNodesAboveFields(const NxsSimpleNode * root
     mergeShortLeavesLists(*gRoot, LEFT_OR_RIGHT, *LeftChild(*gRoot), *RightChild(*gRoot));
     assert(rb->GetActiveEdgeInfoPtr()->GetClosestLeavesAbove()[0].leaf == rootLeft);
     rb->GetActiveEdgeInfoPtr()->GetClosestLeavesAboveRef()[0].SetScore(0); // modify the score so that the root-spanning path will be treated as a "broken" edge
+    rb->GetActiveEdgeInfoPtr()->SetBelowInitialized(true); // the root's "below" field is also set (empty).
     if (gDebugging) {
         std::cerr << "Ending downpass" <<std::endl;
     }
 
+    
     return centroidChild;
 }
 

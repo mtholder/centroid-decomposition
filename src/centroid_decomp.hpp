@@ -75,14 +75,14 @@ class EdgeDecompInfo {
     public:
         const LPECollection & GetClosestLeavesAbove() const {
             if (!aboveInitialized) {
-                std::cerr << "GetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                std::cerr << "\nGetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
                 assert(aboveInitialized);
             }
             return closestLeavesAbove;
         }
         const LPECollection & GetClosestLeavesBelow() const {
             if (!belowInitialized) {
-                std::cerr << "GetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                std::cerr << "\nGetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
                 assert(belowInitialized);
             }
             assert(belowInitialized);
@@ -110,6 +110,12 @@ class EdgeDecompInfo {
         void SetBelowInitialized(bool v=true) {
             this->belowInitialized = v;
             
+        }
+        bool IsAboveInitialized() const {
+            return this->aboveInitialized;
+        }
+        bool IsBelowInitialized() const  {
+            return this->belowInitialized;
         }
         
         
@@ -418,9 +424,15 @@ void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi);
 
 inline void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi) {
     o << "edi.CLA = ";
-    writeLeafSet(o, edi.GetClosestLeavesAbove());
+    if (edi.IsAboveInitialized()) 
+        writeLeafSet(o, edi.GetClosestLeavesAbove());
+    else
+        o << "<uninit.>";
     o << "; edi.CLB = ";
-    writeLeafSet(o, edi.GetClosestLeavesBelow());
+    if (edi.IsBelowInitialized()) 
+        writeLeafSet(o, edi.GetClosestLeavesBelow());
+    else
+        o << "<uninit.>";
 };
 
 
