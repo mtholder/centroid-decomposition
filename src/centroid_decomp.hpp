@@ -73,14 +73,14 @@ std::ostream & operator<<(std::ostream &, const LeafPathElement &);
 
 class EdgeDecompInfo {
     public:
-        const LPECollection & GetClosestLeavesAbove() const {
+        const LPECollection & GetCloseLeavesAbove() const {
             if (!aboveInitialized) {
                 std::cerr << "\nGetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
                 assert(aboveInitialized);
             }
             return closestLeavesAbove;
         }
-        const LPECollection & GetClosestLeavesBelow() const {
+        const LPECollection & GetCloseLeavesBelow() const {
             if (!belowInitialized) {
                 std::cerr << "\nGetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
                 assert(belowInitialized);
@@ -330,6 +330,9 @@ inline NdBlob * ParentBlob(const NxsSimpleNode &nd) {
     return (NdBlob *)lc->scratch;
 }
 
+inline NdBlob * CurrentBlob(const NxsSimpleNode &nd) {
+    return (NdBlob *)nd.scratch;
+}
 
 
 inline void writeLeafSet(std::ostream &o, const LPECollection &ls) {
@@ -425,12 +428,12 @@ void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi);
 inline void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi) {
     o << "edi.CLA = ";
     if (edi.IsAboveInitialized()) 
-        writeLeafSet(o, edi.GetClosestLeavesAbove());
+        writeLeafSet(o, edi.GetCloseLeavesAbove());
     else
         o << "<uninit.>";
     o << "; edi.CLB = ";
     if (edi.IsBelowInitialized()) 
-        writeLeafSet(o, edi.GetClosestLeavesBelow());
+        writeLeafSet(o, edi.GetCloseLeavesBelow());
     else
         o << "<uninit.>";
 };
@@ -456,6 +459,12 @@ inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
     }
 }
 
+void mergePathElementLists(LPECollection &peList,
+                           TreeDirection firDir,
+                           const LPECollection & firSource,
+                           TreeDirection secDir,
+                           const LPECollection & secSource
+                           );
 
 #endif  /*! defined(CENTROID_DECOMP_HPP) */
 
