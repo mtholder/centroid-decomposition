@@ -59,11 +59,14 @@ class LeafPathElement {
     void SetScore(long sc) {
         this->iScore = sc;
     }
+    const NxsSimpleNode * GetLeaf() const {
+        return this->leaf;
+    }
     public: // should be private
-        const NxsSimpleNode * leaf;
         TreeDirection dirToNext;
         int indexInNext;
     private:
+        const NxsSimpleNode * leaf;
         long iScore;
 };
 typedef std::vector<LeafPathElement> LPECollection;
@@ -336,11 +339,11 @@ inline NdBlob * CurrentBlob(const NxsSimpleNode &nd) {
 
 
 inline void writeLeafSet(std::ostream &o, const LPECollection &ls) {
-    o << "{";
+    o << "ls@ " << (long)&ls <<" {";
     for (LPECollectionConstIt i = ls.begin(); i != ls.end(); ++i) {
         if (i != ls.begin())
             o << ", ";
-        const NxsSimpleNode &nd = *(i->leaf);
+        const NxsSimpleNode &nd = *(i->GetLeaf());
         o << nd.GetTaxonIndex();
     }
     o << "}";
@@ -384,7 +387,7 @@ inline std::ostream & operator<<(std::ostream & o, const TreeSweepDirection &d) 
 }
 
 inline void writeLeafPathElement(std::ostream &o, const LeafPathElement &ls) {
-    o << "lpe{leaf=" << ls.leaf->GetTaxonIndex();
+    o << "lpe{leaf=" << ls.GetLeaf()->GetTaxonIndex();
     o << ", dirToNext=" << ls.dirToNext;
     o << ", indexInNext=" << ls.indexInNext;
     o << ", iScore=" << ls.GetScore() << '}';
@@ -453,7 +456,7 @@ inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
     o << " b.activeEdgeInfo = b.fullEdgeInfo";
     }
     else {
-        o << " b.activeEdgeInfo = [";
+        o << " b.activeEdgeInfo@" << (long)b->GetActiveEdgeInfoConstPtr() << " = [";
         writeEdgeDecompInfo(o, *b->GetActiveEdgeInfoConstPtr());
         o << "]";
     }
