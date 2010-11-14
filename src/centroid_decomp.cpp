@@ -31,6 +31,20 @@ bool gEmitIntermediates = false;
 
 NxsSimpleNode * rootLeft ; // leaf 0, which will be the left child of the root
 
+unsigned gMaxNumLeafPaths = 0;
+
+// user-controlled options as global variables...
+bool gVerbose = false;
+long gLeafSetIntersectionSize = 48; // we demand that the leaf set intersection size be exactly THIS_NODE_DIR
+long gFloorHalfIntersectionSize = 24; // we shoot for this many above and below the centroid
+
+long gMaxSubProblemSize = 250;
+bool gUseEdgeLengths = false;
+bool gIntercalate = false;
+
+std::ostream * gOutputStream = &(std::cout);
+
+
 const LPECollection & GetClosestLeavesAboveNd(const NxsSimpleNode *nd);
 
 inline const LPECollection & GetClosestLeavesAboveNd(const NxsSimpleNode *nd) {
@@ -57,6 +71,13 @@ inline const LPECollection & GetClosestLeavesAboveNd(const NxsSimpleNode *nd) {
                                   RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*nd)));
         }
         edi->SetAboveInitialized(true);
+    }
+
+    if (gDebugging) {
+        if (edi->GetCloseLeavesAbove().size() < (unsigned) b->GetNumActiveLeavesAbove() && b->GetNumActiveLeavesAbove() < gFloorHalfIntersectionSize) {
+            std::cerr << "edi->GetCloseLeavesAbove().size() = " << edi->GetCloseLeavesAbove().size() << " b->GetNumActiveLeavesAbove() = " << b->GetNumActiveLeavesAbove() << std::endl;
+            assert(false);
+        }
     }
     return edi->GetCloseLeavesAbove();
     
@@ -93,9 +114,9 @@ inline const LPECollection & GetClosestLeavesBelowNd(const NxsSimpleNode *nd) {
 
         }
         else {
-            TreeSweepDirection u = TreeSweepDirection(d & RIGHT_OR_BELOW);
+            TreeSweepDirection u = TreeSweepDirection(d & LEFT_OR_BELOW);
 
-            if (u == RIGHT_OR_BELOW) {
+            if (u == LEFT_OR_BELOW) {
                 mergePathElementLists(edi->GetClosestLeavesBelowRef(), 
                                       LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*par)),
                                       BELOW_DIR, GetClosestLeavesBelowNd(par));
@@ -317,18 +338,6 @@ void debugPrintTree(std::ostream &o, const NxsSimpleNode *nd) {
     debugPrintTree(o, nd, mt);
 }
 
-unsigned gMaxNumLeafPaths = 0;
-
-// user-controlled options as global variables...
-bool gVerbose = false;
-long gLeafSetIntersectionSize = 48; // we demand that the leaf set intersection size be exactly THIS_NODE_DIR
-long gFloorHalfIntersectionSize = 24; // we shoot for this many above and below the centroid
-
-long gMaxSubProblemSize = 250;
-bool gUseEdgeLengths = false;
-bool gIntercalate = false;
-
-std::ostream * gOutputStream = &(std::cout);
 
 
 
@@ -1369,6 +1378,10 @@ const NxsSimpleNode * doDecomposition(const NxsSimpleNode * topCentroidChild,
             assert(false); // in the current system of decompositions this should not occur.
             nextCentroid = findCentroidForActiveLeavesUp(activeRoot, sizeOfSubproblem, sc, &minCS);
         }
+        if (gDebugging) {
+            std::cerr << "nextCentroid: " ; debugNdPrint(std::cerr, *nextCentroid); std::cerr << std::endl;
+        }
+        
         assert(nextCentroid);
         const NxsSimpleNode * nextBottomCentroid = nextCentroid;
         for (;;) {
@@ -1515,7 +1528,9 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
         numBelowChosen = gLeafSetIntersectionSize - numAboveChosen;
     }
 
-    long floorHalfAbove = numAboveChosen/2;
+    const long floorHalfAbove = numAboveChosen/2;
+    const long cielHalfAbove = (2*floorHalfAbove == numAboveChosen ? floorHalfAbove : 1 + floorHalfAbove);
+    assert(floorHalfAbove + cielHalfAbove == numAboveChosen);
     const long origNumActiveLeavesAboveLeft = leftBlob->GetNumActiveLeavesAbove();
     if (origNumActiveLeavesAboveLeft < floorHalfAbove) {
         numLeftChosen = origNumActiveLeavesAboveLeft;
@@ -1523,13 +1538,13 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
         numRightChosen = numAboveChosen - numLeftChosen;
     }
     else {
-        if (rightBlob->GetNumActiveLeavesAbove() < floorHalfAbove) {
+        if (rightBlob->GetNumActiveLeavesAbove() < cielHalfAbove) {
             numRightChosen = rightBlob->GetNumActiveLeavesAbove();
             assert(origNumActiveLeavesAboveLeft >= numAboveChosen - numRightChosen);
 
         }
         else {
-            numRightChosen = floorHalfAbove; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
+            numRightChosen = cielHalfAbove; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
         }
         numLeftChosen = numAboveChosen - numRightChosen;
     }
@@ -1537,19 +1552,21 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
         std::cerr << "numAboveChosen=" <<numAboveChosen << ", numBelowChosen=" << numBelowChosen << " sibBlob->GetNumActiveLeavesAbove()=" << sibBlob->GetNumActiveLeavesAbove() <<  ", numActiveLeaves=" << numActiveLeaves << ", parBlob->GetNumActiveLeavesAbove()=" << parBlob->GetNumActiveLeavesAbove() << '\n';
 
 
-    long floorHalfBelow = numBelowChosen/2;
+    const long floorHalfBelow = numBelowChosen/2;
+    const long cielHalfBelow = (floorHalfBelow*2 == numBelowChosen ? floorHalfBelow : 1 + floorHalfBelow);
+    assert(floorHalfBelow + cielHalfBelow == numBelowChosen);
     if (sibBlob->GetNumActiveLeavesAbove() < floorHalfBelow) {
         numSibChosen = sibBlob->GetNumActiveLeavesAbove();
         assert((numActiveLeaves  - parBlob->GetNumActiveLeavesAbove()) >= numBelowChosen - numSibChosen);
         numParChosen = numBelowChosen - numSibChosen;
     }
     else {
-        if ((numActiveLeaves  - parBlob->GetNumActiveLeavesAbove()) < floorHalfBelow) {
+        if ((numActiveLeaves  - parBlob->GetNumActiveLeavesAbove()) < cielHalfBelow) {
             numParChosen = (numActiveLeaves  - parBlob->GetNumActiveLeavesAbove());
             assert(sibBlob->GetNumActiveLeavesAbove() == numBelowChosen - numParChosen);
         }
         else {
-            numParChosen = floorHalfBelow; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
+            numParChosen = cielHalfBelow; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
         }
         numSibChosen = numBelowChosen - numParChosen;
     }
@@ -1563,6 +1580,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     assert(numParChosen > 0);
 
     if (gDebugging) {
+        std::cerr << "floorHalfBelow = " << floorHalfBelow;
         std::cerr << "numLeftChosen = " << numLeftChosen << " leftSubtreeRoot = ";
         debugNdPrint(std::cerr, *leftSubtreeRoot);
         std::cerr << "\nnumRightChosen = " << numRightChosen << " rightSubtreeRoot = ";
@@ -1599,6 +1617,9 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     const EdgeDecompInfo * sibEDI = sibBlob->GetActiveEdgeInfoConstPtr();
     assert(sibEDI);
     const LPECollection & sibFullLPEC = GetClosestLeavesAboveNd(sibSubtreeRoot);
+    if (gDebugging) {
+        std::cerr << "sibBlob: "; debugBlobPrint(std::cerr, sibBlob); std::cerr << std::endl;
+    }    
     assert(sibFullLPEC.size() >= (unsigned long)numSibChosen);
     LPECollection::const_iterator sibfLPECIt = sibFullLPEC.begin();
     LPECollection sibCommonLeafSet;
