@@ -6,7 +6,7 @@
 
 extern long gNumNodes;
 extern long gNumLeaves;
-
+extern bool gDebugging;
 
 
 enum TreeSweepDirection {
@@ -29,42 +29,44 @@ enum TreeDirection {
 
 class LeafPathElement {
     public:
-    LeafPathElement(const NxsSimpleNode *nd, TreeDirection d) {
-        assert(nd);
-        assert(nd->IsTip());
-        leaf = nd;
-        iScore = 0;
-        dirToNext = d;
-        indexInNext = -1;
-    }
-
-    LeafPathElement(const LeafPathElement &nextEl, TreeDirection d, unsigned index) {
-        leaf = nextEl.leaf;
-        dirToNext = d;
-        assert(index < INT_MAX);
-        indexInNext = (int)index;
-        assert(nextEl.iScore >= 0);
-        iScore = nextEl.iScore + 1;
-    }
-
-    bool operator<(const LeafPathElement & other) const {
-        assert(this->iScore >= 0);
-        assert(other.iScore >= 0);
-        return this->iScore < other.iScore;
-    }
+        LeafPathElement(const NxsSimpleNode *nd, TreeDirection d) {
+            assert(nd);
+            assert(nd->IsTip());
+            leaf = nd;
+            iScore = 0;
+            dirToNext = d;
+            indexInNext = -1;
+            indexInFull = 0;
+        }
     
-    long GetScore() const {
-        return this->iScore;
-    }
-    void SetScore(long sc) {
-        this->iScore = sc;
-    }
-    const NxsSimpleNode * GetLeaf() const {
-        return this->leaf;
-    }
+        LeafPathElement(const LeafPathElement &nextEl, TreeDirection d, int indexAtAdj, int indInFullList) {
+            leaf = nextEl.leaf;
+            dirToNext = d;
+            indexInNext = indexAtAdj;
+            indexInFull = indInFullList;
+            assert(nextEl.iScore >= 0);
+            iScore = nextEl.iScore + 1;
+        }
+    
+        bool operator<(const LeafPathElement & other) const {
+            assert(this->iScore >= 0);
+            assert(other.iScore >= 0);
+            return this->iScore < other.iScore;
+        }
+        
+        long GetScore() const {
+            return this->iScore;
+        }
+        void SetScore(long sc) {
+            this->iScore = sc;
+        }
+        const NxsSimpleNode * GetLeaf() const {
+            return this->leaf;
+        }
     public: // should be private
         TreeDirection dirToNext;
         int indexInNext;
+        unsigned indexInFull;
     private:
         const NxsSimpleNode * leaf;
         long iScore;
@@ -168,6 +170,21 @@ class NdBlobSettingStruct {
         EdgeDecompInfo * edgeDecompInfo;
         std::set<NdBlob *> & alteredBlobs;
 };
+
+inline unsigned GetFullIndexForLeaf(const NxsSimpleNode *nd, const std::map<const NxsSimpleNode *, int> & m) {
+    std::map<const NxsSimpleNode *, int>::const_iterator toInd = m.find(nd);
+    if (toInd == m.end()) {
+        return UINT_MAX;
+        std::cerr << "Leaf " << nd->GetTaxonIndex() << " not found in collection {";
+        for (std::map<const NxsSimpleNode *, int>::const_iterator i = m.begin(); i != m.end(); ++i) {
+            std::cerr << i->first->GetTaxonIndex() << " : " << i->second << ", ";
+        }
+        std::cerr << "}\n";
+        assert(toInd != m.end());
+    }
+    return toInd->second;
+}
+
 class NdBlob {
     public:
 
@@ -229,12 +246,27 @@ class NdBlob {
             isParentsLeftChild = v;
         }
         
+        const std::map<const NxsSimpleNode *, int> & GetLeafToIndexMapUp() const {
+            return leafToIndexMapUp;
+        }
+        const std::map<const NxsSimpleNode *, int> & GetLeafToIndexMapDown() const {
+            return leafToIndexMapDown;
+        }
         
         long numLeavesAboveEdge;
         int ndDirWRTParent;
         LPECollection lpeScratch1;
         LPECollection lpeScratch2;
+        std::map<const NxsSimpleNode *, int> leafToIndexMapUp;
+        std::map<const NxsSimpleNode *, int> leafToIndexMapDown;
 
+
+        unsigned GetFullDownIndexForLeaf(const NxsSimpleNode *nd) const {
+            return GetFullIndexForLeaf(nd, leafToIndexMapDown);
+        }
+        unsigned GetFullUpIndexForLeaf(const NxsSimpleNode *nd) const {
+            return GetFullIndexForLeaf(nd, leafToIndexMapUp);
+        }
 
     private:
         void SetActiveEdgeInfoPtr(EdgeDecompInfo *n) {
@@ -463,6 +495,7 @@ inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
 }
 
 void mergePathElementLists(LPECollection &peList,
+                           const std::map<const NxsSimpleNode *, int> & leafNdPtrToIndex,
                            TreeDirection firDir,
                            const LPECollection & firSource,
                            TreeDirection secDir,
