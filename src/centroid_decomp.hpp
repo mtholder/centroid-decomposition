@@ -171,7 +171,7 @@ class NdBlobSettingStruct {
         std::set<NdBlob *> & alteredBlobs;
 };
 
-inline unsigned GetFullIndexForLeaf(const NxsSimpleNode *nd, const std::map<const NxsSimpleNode *, int> & m) {
+inline unsigned CheckFullIndexForLeaf(const NxsSimpleNode *nd, const std::map<const NxsSimpleNode *, int> & m) {
     std::map<const NxsSimpleNode *, int>::const_iterator toInd = m.find(nd);
     if (toInd == m.end()) {
         return UINT_MAX;
@@ -257,18 +257,36 @@ class NdBlob {
         int ndDirWRTParent;
         LPECollection lpeScratch1;
         LPECollection lpeScratch2;
-        std::map<const NxsSimpleNode *, int> leafToIndexMapUp;
-        std::map<const NxsSimpleNode *, int> leafToIndexMapDown;
+        mutable std::map<const NxsSimpleNode *, int> leafToIndexMapUp;
+        mutable std::map<const NxsSimpleNode *, int> leafToIndexMapDown;
 
-
-        unsigned GetFullDownIndexForLeaf(const NxsSimpleNode *nd) const {
-            return GetFullIndexForLeaf(nd, leafToIndexMapDown);
+        
+        unsigned FindFullIndexForLPEDown(const LeafPathElement & lpe, TreeDirection d, int indexInAdjacent) const {
+            unsigned i = CheckFullDownIndexForLeaf(lpe.GetLeaf());
+            if (i == UINT_MAX) {
+                i = fullEdgeInfo.GetClosestLeavesBelowRef().size();
+                fullEdgeInfo.GetClosestLeavesBelowRef().push_back(LeafPathElement(lpe, d, indexInAdjacent, (int) i));
+                leafToIndexMapDown[lpe.GetLeaf()] = i;
+            }
+            return i;
         }
-        unsigned GetFullUpIndexForLeaf(const NxsSimpleNode *nd) const {
-            return GetFullIndexForLeaf(nd, leafToIndexMapUp);
+        unsigned FindFullIndexForLPEUp(const LeafPathElement & lpe, TreeDirection d, int indexInAdjacent) const {
+            unsigned i = CheckFullUpIndexForLeaf(lpe.GetLeaf());
+            if (i == UINT_MAX) {
+                i = fullEdgeInfo.GetClosestLeavesAboveRef().size();
+                fullEdgeInfo.GetClosestLeavesAboveRef().push_back(LeafPathElement(lpe, d, indexInAdjacent, (int) i));
+                leafToIndexMapUp[lpe.GetLeaf()] = i;
+            }
+            return i;
         }
 
     private:
+        unsigned CheckFullDownIndexForLeaf(const NxsSimpleNode *nd) const {
+            return CheckFullIndexForLeaf(nd, leafToIndexMapDown);
+        }
+        unsigned CheckFullUpIndexForLeaf(const NxsSimpleNode *nd) const {
+            return CheckFullIndexForLeaf(nd, leafToIndexMapUp);
+        }
         void SetActiveEdgeInfoPtr(EdgeDecompInfo *n) {
             this->edgeInfoStack.push(this->activeEdgeInfo);
             this->activeEdgeInfo = n;
@@ -284,7 +302,7 @@ class NdBlob {
             this->numActiveLeavesAboveEdge = n;
         }
 
-        EdgeDecompInfo fullEdgeInfo;
+        mutable EdgeDecompInfo fullEdgeInfo;
 
         long numActiveLeavesAboveEdge;
         TreeSweepDirection activeLeafDir;
@@ -495,7 +513,8 @@ inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
 }
 
 void mergePathElementLists(LPECollection &peList,
-                           const std::map<const NxsSimpleNode *, int> & leafNdPtrToIndex,
+                           NdBlob * ndBlob,
+                           TreeSweepDirection ,
                            TreeDirection firDir,
                            const LPECollection & firSource,
                            TreeDirection secDir,

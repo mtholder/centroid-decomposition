@@ -56,18 +56,18 @@ inline const LPECollection & GetClosestLeavesAboveNd(const NxsSimpleNode *nd) {
         TreeSweepDirection u = TreeSweepDirection(d & LEFT_OR_RIGHT);
         const LPECollection emptyCollection;
         if (u == LEFT_OR_RIGHT) {
-            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b->GetLeafToIndexMapUp(), 
+            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b, LEFT_OR_RIGHT, 
                                   LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*nd)),
                                   RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*nd)));
         }
         else if (u == LEFT_DIR_BIT) {
-            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b->GetLeafToIndexMapUp(), 
+            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b, LEFT_OR_RIGHT, 
                                   LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*nd)),
                                   RIGHT_DIR, emptyCollection);
         }
         else {
             assert(u == RIGHT_DIR_BIT);
-            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b->GetLeafToIndexMapUp(), 
+            mergePathElementLists(edi->GetClosestLeavesAboveRef(), b, LEFT_OR_RIGHT, 
                                   LEFT_DIR, emptyCollection,
                                   RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*nd)));
         }
@@ -97,18 +97,18 @@ inline const LPECollection & GetClosestLeavesBelowNd(const NxsSimpleNode *nd) {
             TreeSweepDirection u = TreeSweepDirection(d & RIGHT_OR_BELOW);
 
             if (u == RIGHT_OR_BELOW) {
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*par)),
                                       BELOW_DIR, GetClosestLeavesBelowNd(par));
             }
             else if (u == BELOW_DIR_BIT) {
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       RIGHT_DIR, emptyCollection,
                                       BELOW_DIR, GetClosestLeavesBelowNd(par));
             }
             else {
                 assert(u == RIGHT_DIR_BIT);
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*par)),
                                       BELOW_DIR, emptyCollection);
             }
@@ -119,18 +119,18 @@ inline const LPECollection & GetClosestLeavesBelowNd(const NxsSimpleNode *nd) {
             TreeSweepDirection u = TreeSweepDirection(d & LEFT_OR_BELOW);
 
             if (u == LEFT_OR_BELOW) {
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*par)),
                                       BELOW_DIR, GetClosestLeavesBelowNd(par));
             }
             else if (u == BELOW_DIR_BIT) {
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       LEFT_DIR, emptyCollection,
                                       BELOW_DIR, GetClosestLeavesBelowNd(par));
             }
             else {
                 assert(u == LEFT_DIR_BIT);
-                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b->GetLeafToIndexMapDown(), 
+                mergePathElementLists(edi->GetClosestLeavesBelowRef(), b, BELOW_DIR_BIT, 
                                       LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*par)),
                                       BELOW_DIR, emptyCollection);
             }
@@ -452,7 +452,8 @@ void mergePathElementListsIni(LPECollection &peList,
 
 
 void mergePathElementLists(LPECollection &peList,
-                           const std::map<const NxsSimpleNode *, int> & leafNdPtrToIndex,
+                           NdBlob *blob, 
+                           TreeSweepDirection upOrDown,
                            TreeDirection firDir,
                            const LPECollection & firSource,
                            TreeDirection secDir,
@@ -461,7 +462,7 @@ void mergePathElementLists(LPECollection &peList,
     //std::cerr << "mergePathElementLists insizes = " << peList.size() << ", " << firSource.size() << ", " << secSource.size()   << std::endl;
     peList.reserve(gMaxNumLeafPaths);
     assert(!gIntercalate);
-
+    assert(upOrDown == LEFT_OR_RIGHT || upOrDown == BELOW_DIR_BIT);
     if (gDebugging) {
         std::cerr << "mergePathElementLists(peList, firDir=" << firDir << ", firSource=";
         writeLeafPathElementVector(std::cerr, firSource);
@@ -469,21 +470,29 @@ void mergePathElementLists(LPECollection &peList,
         writeLeafPathElementVector(std::cerr, secSource);
         std::cerr << ")" << std::endl;
     }
+    int infull;
+    
     std::map<const NxsSimpleNode *, int>::const_iterator inFullIt;
     if (firSource.empty()) {
         LPECollectionConstIt secIt = secSource.begin();
         for (unsigned ind = 0; secIt != secSource.end(); ++secIt, ++ind) {
-            int infull = GetFullIndexForLeaf(secIt->GetLeaf(), leafNdPtrToIndex);
+            if (upOrDown == LEFT_OR_RIGHT) 
+                infull = blob->FindFullIndexForLPEUp(*secIt, secDir, secIt->indexInFull);
+            else
+                infull = blob->FindFullIndexForLPEDown(*secIt, secDir, secIt->indexInFull);
             LeafPathElement newLPE(*secIt, secDir, secIt->indexInFull, infull);
             peList.push_back(newLPE);
         }
         return;
     }
     if (secSource.empty()) {
-        LPECollectionConstIt secIt = firSource.begin();
-        for (unsigned ind = 0; secIt != firSource.end(); ++secIt, ++ind) {
-            int infull = GetFullIndexForLeaf(secIt->GetLeaf(), leafNdPtrToIndex);
-            LeafPathElement newLPE(*secIt, firDir, secIt->indexInFull, infull);
+        LPECollectionConstIt firIt = firSource.begin();
+        for (unsigned ind = 0; firIt != firSource.end(); ++firIt, ++ind) {
+            if (upOrDown == LEFT_OR_RIGHT) 
+                infull = blob->FindFullIndexForLPEUp(*firIt, firDir, firIt->indexInFull);
+            else
+                infull = blob->FindFullIndexForLPEDown(*firIt, firDir, firIt->indexInFull);
+            LeafPathElement newLPE(*firIt, firDir, firIt->indexInFull, infull);
             peList.push_back(newLPE);
         }
         return;
@@ -548,8 +557,10 @@ void mergePathElementLists(LPECollection &peList,
         assert(nLPE);
 
 
-        int infull = GetFullIndexForLeaf(nLPE->GetLeaf(), leafNdPtrToIndex);
-        
+        if (upOrDown == LEFT_OR_RIGHT) 
+            infull = blob->FindFullIndexForLPEUp(*nLPE, d, nLPE->indexInFull);
+        else
+            infull = blob->FindFullIndexForLPEDown(*nLPE, d, nLPE->indexInFull);
         LeafPathElement newLPE(*nLPE, d, nLPE->indexInFull, infull);
         peList.push_back(newLPE);
     }
@@ -1050,7 +1061,7 @@ const NxsSimpleNode * flagActivePathDown(
 
     EdgeDecompInfo * edi = new EdgeDecompInfo(__FILE__, __LINE__);
     assert(edi->GetClosestLeavesAboveRef().empty());
-    mergePathElementLists(edi->GetClosestLeavesAboveRef(), actBlob->GetLeafToIndexMapUp(), LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*actRoot)),
+    mergePathElementLists(edi->GetClosestLeavesAboveRef(), actBlob, LEFT_OR_RIGHT, LEFT_DIR, GetClosestLeavesAboveNd(LeftChild(*actRoot)),
                                           RIGHT_DIR, GetClosestLeavesAboveNd(RightChild(*actRoot)));
     edi->SetAboveInitialized(true);
     NdBlobSettingStruct nbss(actBlob, 
@@ -1467,7 +1478,7 @@ const NxsSimpleNode * doDecomposition(const NxsSimpleNode * topCentroidChild,
             
             EdgeDecompInfo * cedi = (CurrentBlob(*prev))->GetActiveEdgeInfoPtr();
             //assert(cedi->GetClosestLeavesAboveRef().empty());
-            mergePathElementLists(cedi->GetClosestLeavesAboveRef(), (CurrentBlob(*prev))->GetLeafToIndexMapUp(),  LEFT_DIR, GetClosestLeavesAboveNd(leftSubtreeRoot),
+            mergePathElementLists(cedi->GetClosestLeavesAboveRef(), CurrentBlob(*prev), LEFT_OR_RIGHT,  LEFT_DIR, GetClosestLeavesAboveNd(leftSubtreeRoot),
                                           RIGHT_DIR, GetClosestLeavesAboveNd(rightSubtreeRoot));
             cedi->SetAboveInitialized(true);
             const NxsSimpleNode * nd = Parent(*prev);
@@ -1477,12 +1488,12 @@ const NxsSimpleNode * doDecomposition(const NxsSimpleNode * topCentroidChild,
                 NdBlob * prevb = CurrentBlob(*prev);
                 if (prevb->IsParentsLeftChild()) {
                     assert(cedi->GetClosestLeavesAboveRef().empty());
-                    mergePathElementLists(cedi->GetClosestLeavesAboveRef(), prevb->GetLeafToIndexMapUp(), LEFT_DIR, GetClosestLeavesAboveNd(prev),
+                    mergePathElementLists(cedi->GetClosestLeavesAboveRef(), prevb, LEFT_OR_RIGHT, LEFT_DIR, GetClosestLeavesAboveNd(prev),
                                           RIGHT_DIR, emptyCollection);
                 }
                 else {
                     assert(cedi->GetClosestLeavesAboveRef().empty());
-                    mergePathElementLists(cedi->GetClosestLeavesAboveRef(), prevb->GetLeafToIndexMapUp(),  LEFT_DIR, emptyCollection,
+                    mergePathElementLists(cedi->GetClosestLeavesAboveRef(), prevb, LEFT_OR_RIGHT,  LEFT_DIR, emptyCollection,
                                           RIGHT_DIR, GetClosestLeavesAboveNd(prev));
                 }
                 cedi->SetAboveInitialized(true);
@@ -1691,7 +1702,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     else {
         if ((numActiveLeaves  - parBlob->GetNumActiveLeavesAbove()) < cielHalfBelow) {
             numParChosen = (numActiveLeaves  - parBlob->GetNumActiveLeavesAbove());
-            assert(sibBlob->GetNumActiveLeavesAbove() == numBelowChosen - numParChosen);
+            assert(sibBlob->GetNumActiveLeavesAbove() >= numBelowChosen - numParChosen);
         }
         else {
             numParChosen = cielHalfBelow; //\TODO should probably sort the PLE's and use their order to decide which direction gets the rounding error...
@@ -1729,7 +1740,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     LPECollection leftCommonLeafSet;
     leftCommonLeafSet.reserve(numLeftChosen);
     for (unsigned i=0; i < numLeftChosen; ++i, ++lfLPECIt) {
-        int infull = leftBlob->GetFullUpIndexForLeaf(lfLPECIt->GetLeaf());
+        int infull = leftBlob->FindFullIndexForLPEUp(*lfLPECIt, LEFT_DIR, lfLPECIt->indexInFull);
         leftCommonLeafSet.push_back(LeafPathElement(*lfLPECIt, LEFT_DIR, lfLPECIt->indexInFull, infull));
     }
     assert(leftCommonLeafSet.size() == (unsigned long) numLeftChosen);
@@ -1742,7 +1753,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     LPECollection rightCommonLeafSet;
     rightCommonLeafSet.reserve(numRightChosen);
     for (unsigned i=0; i < numRightChosen; ++i, ++rfLPECIt) {
-        int infull = rightBlob->GetFullUpIndexForLeaf(rfLPECIt->GetLeaf());
+        int infull = rightBlob->FindFullIndexForLPEUp(*rfLPECIt, RIGHT_DIR, rfLPECIt->indexInFull);
         rightCommonLeafSet.push_back(LeafPathElement(*rfLPECIt, RIGHT_DIR, rfLPECIt->indexInFull, infull));
     }
     assert(rightCommonLeafSet.size() == (unsigned long) numRightChosen);
@@ -1758,7 +1769,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     LPECollection sibCommonLeafSet;
     sibCommonLeafSet.reserve(numSibChosen);
     for (unsigned i=0; i < numSibChosen; ++i, ++sibfLPECIt) {
-        int infull = sibBlob->GetFullUpIndexForLeaf(sibfLPECIt->GetLeaf());
+        int infull = sibBlob->FindFullIndexForLPEUp(*sibfLPECIt, (sibBlob->IsParentsLeftChild() ? LEFT_DIR : RIGHT_DIR), sibfLPECIt->indexInFull);
         sibCommonLeafSet.push_back(LeafPathElement(*sibfLPECIt, (sibBlob->IsParentsLeftChild() ? LEFT_DIR : RIGHT_DIR), sibfLPECIt->indexInFull, infull));
     }
     assert(sibCommonLeafSet.size() == (unsigned long)numSibChosen);
@@ -1771,7 +1782,7 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
     LPECollection parCommonLeafSet;
     parCommonLeafSet.reserve(numParChosen);
     for (unsigned i=0; i < numParChosen; ++i, ++parfLPECIt) {
-        int infull = sibBlob->GetFullDownIndexForLeaf(parfLPECIt->GetLeaf());
+        int infull = sibBlob->FindFullIndexForLPEDown(*parfLPECIt, BELOW_DIR, parfLPECIt->indexInFull);
         parCommonLeafSet.push_back(LeafPathElement(*parfLPECIt, BELOW_DIR, parfLPECIt->indexInFull, infull));
     }
     assert(parCommonLeafSet.size() == (unsigned long)numParChosen);
