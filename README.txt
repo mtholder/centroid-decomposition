@@ -80,7 +80,11 @@ Timed on a Mac laptop with:
     Intel Core i7 - 2.66 GHz processor
     8G RAM
     ssd
-    
+
+All of the results below are for default runs (max subset size 250 leaves
+and leaf set intersection size of 48).
+
+
 Some random tree shapes:
    27,643 taxa ->  1.248 seconds
    55,286 taxa ->  2.530 seconds

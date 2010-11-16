@@ -2171,7 +2171,19 @@ bool treeReadCallback(NxsFullTreeDescription &ftd, void *x, NxsTreesBlock *trees
     //       iniRoot=> o
     ////////
     NxsSimpleTree t(ftd, 0, 0.0);
-    NxsSimpleNode * leaf0 = t.RerootAt(0);
+    std::vector<NxsSimpleNode *> & leafVec = t.GetLeavesRef();
+    NxsSimpleNode * newRoot = 0L;
+    for (std::vector<NxsSimpleNode *>::iterator lfIt = leafVec.begin(); lfIt != leafVec.end(); ++lfIt) {
+        if (*lfIt) {
+            newRoot = *lfIt;
+            break;
+        }
+    }
+    if (newRoot == 0L) {
+        gErrorMessage << "Failed to find a leaf to use as the left child of the root!";
+        throw NxsException(gErrorMessage);
+    }
+    NxsSimpleNode * leaf0 = t.RerootAtNode(newRoot);
     NxsSimpleNode * iniRoot = const_cast<NxsSimpleNode *>(t.GetRootConst());
     rootLeft = const_cast<NxsSimpleNode *>(LeftChild(*iniRoot));
     if (rootLeft != leaf0) {
@@ -2288,6 +2300,7 @@ int readInput(std::istream &inp, MultiFormatReader::DataFormatType fmt, const st
     treesB->SetAllowImplicitNames(true);
     treesB->setValidationCallbacks(treeReadCallback, 0L);
     treesB->SetTreatAsRootedByDefault(false);
+    treesB->SetTreatIntegerLabelsAsNumbers(true);
     try {
         gNexusReader->ReadStream(inp, fmt, filename.c_str());
     }
