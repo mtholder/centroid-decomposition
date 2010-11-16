@@ -79,18 +79,21 @@ std::ostream & operator<<(std::ostream &, const LeafPathElement &);
 class EdgeDecompInfo {
     public:
         const LPECollection & GetCloseLeavesAbove() const {
-            if (!aboveInitialized) {
-                std::cerr << "\nGetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
-                assert(aboveInitialized);
-            }
+#           if ! defined(NDEBUG)
+                if (!aboveInitialized) {
+                    std::cerr << "\nGetClosestLeavesAbove valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                    assert(aboveInitialized);
+                }
+#           endif 
             return closestLeavesAbove;
         }
         const LPECollection & GetCloseLeavesBelow() const {
-            if (!belowInitialized) {
-                std::cerr << "\nGetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
-                assert(belowInitialized);
-            }
-            assert(belowInitialized);
+#           if ! defined(NDEBUG)
+                if (!belowInitialized) {
+                    std::cerr << "\nGetClosestLeavesBelow valid assertion failing for EDI allocated at line " << this->line << " of file " << this->fn << std::endl;
+                    assert(belowInitialized);
+                }
+#           endif ! defined(NDEBUG)
             return closestLeavesBelow;
         }
 
@@ -124,17 +127,23 @@ class EdgeDecompInfo {
         }
         
         
-        EdgeDecompInfo(const char *filename, int lineInit)
-            :fn(filename),
-            line(lineInit),
-            aboveInitialized(false),
-            belowInitialized(false)
-            {}
+#       if ! defined(NDEBUG)
+            EdgeDecompInfo(const char *filename, int lineInit)
+                :fn(filename),
+                line(lineInit),
+#       else
+            EdgeDecompInfo(const char *, int )
+                :
+#       endif
+                aboveInitialized(false),
+                belowInitialized(false)
+                {}
             
     private:
-        std::string fn ; //debugging purposes only -- the line at which the instance was created.
-        int line ; //debugging purposes only -- the line at which the instance was created.
-    
+#       if ! defined(NDEBUG)
+            std::string fn ; //debugging purposes only -- the line at which the instance was created.
+            int line ; //debugging purposes only -- the line at which the instance was created.
+#       endif
         LPECollection closestLeavesAbove;
         LPECollection closestLeavesBelow;
         bool aboveInitialized;
@@ -175,12 +184,6 @@ inline unsigned CheckFullIndexForLeaf(const NxsSimpleNode *nd, const std::map<co
     std::map<const NxsSimpleNode *, int>::const_iterator toInd = m.find(nd);
     if (toInd == m.end()) {
         return UINT_MAX;
-        std::cerr << "Leaf " << nd->GetTaxonIndex() << " not found in collection {";
-        for (std::map<const NxsSimpleNode *, int>::const_iterator i = m.begin(); i != m.end(); ++i) {
-            std::cerr << i->first->GetTaxonIndex() << " : " << i->second << ", ";
-        }
-        std::cerr << "}\n";
-        assert(toInd != m.end());
     }
     return toInd->second;
 }
@@ -462,8 +465,6 @@ inline void writeLeafPathElementVector(std::ostream &o, const LPECollection &ls)
 
 inline void NdBlob::SetActiveLeafDir(TreeSweepDirection n) {
     this->activeLeafDirStack.push(this->activeLeafDir);
-//    std::cerr << "pushed activeLeafDir = " << this->activeLeafDir  << " for ndblob " << (long) this << '\n';
-
     this->activeLeafDir = n;
 }
 
@@ -474,7 +475,9 @@ void decomposeAroundCentroidChild(const NxsSimpleNode *topCentroidChild,
                                   NxsString namePrefix,
                                   const NxsSimpleNode * effectiveRoot);
 
-void debugBlobPrint(std::ostream & o, const NdBlob * b);
+#if ! defined(NDEBUG)
+    void debugBlobPrint(std::ostream & o, const NdBlob * b);
+#endif
 void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi);
 
 
@@ -492,26 +495,27 @@ inline void writeEdgeDecompInfo(std::ostream & o, const EdgeDecompInfo & edi) {
 };
 
 
-inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
-    o << "b.address = " << (long) b;
-    o << " b#LvsAbove = " << b->GetNumLeavesAbove();
-    o << " b#ActLvsAbove = "<< b->GetNumActiveLeavesAbove();
-    o << " b.actDir = "<< b->GetActiveLeafDir();
-    o << " b.focalDir = "<< b->GetFocalEdgeDir();
-    o << " b.isLeftC = "<< (b->IsParentsLeftChild() ? "T" : "F");
-    o << " b.fullEdgeInfo = [";
-    writeEdgeDecompInfo(o, *(b->GetFullEdgeInfoConstPtr()));
-    o << "]";
-    if (b->GetFullEdgeInfoConstPtr() == b->GetActiveEdgeInfoConstPtr()) {
-    o << " b.activeEdgeInfo = b.fullEdgeInfo";
-    }
-    else {
-        o << " b.activeEdgeInfo@" << (long)b->GetActiveEdgeInfoConstPtr() << " = [";
-        writeEdgeDecompInfo(o, *b->GetActiveEdgeInfoConstPtr());
+#if ! defined(NDEBUG)
+    inline void debugBlobPrint(std::ostream & o, const NdBlob * b) {
+        o << "b.address = " << (long) b;
+        o << " b#LvsAbove = " << b->GetNumLeavesAbove();
+        o << " b#ActLvsAbove = "<< b->GetNumActiveLeavesAbove();
+        o << " b.actDir = "<< b->GetActiveLeafDir();
+        o << " b.focalDir = "<< b->GetFocalEdgeDir();
+        o << " b.isLeftC = "<< (b->IsParentsLeftChild() ? "T" : "F");
+        o << " b.fullEdgeInfo = [";
+        writeEdgeDecompInfo(o, *(b->GetFullEdgeInfoConstPtr()));
         o << "]";
+        if (b->GetFullEdgeInfoConstPtr() == b->GetActiveEdgeInfoConstPtr()) {
+        o << " b.activeEdgeInfo = b.fullEdgeInfo";
+        }
+        else {
+            o << " b.activeEdgeInfo@" << (long)b->GetActiveEdgeInfoConstPtr() << " = [";
+            writeEdgeDecompInfo(o, *b->GetActiveEdgeInfoConstPtr());
+            o << "]";
+        }
     }
-}
-
+#endif
 void mergePathElementLists(LPECollection &peList,
                            NdBlob * ndBlob,
                            TreeSweepDirection ,

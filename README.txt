@@ -69,6 +69,31 @@ Command-line flags:
             -frelaxedphylip Relaxed Phylip name restrictions
 
 
+Example:
+    ./centroid_decomp -frelaxedphyliptree myfile.phy  
+    
+
+################################################################################
+Running times (on Mark's laptop)
+################################################################################
+
+Some random tree shapes:
+   27,643 taxa ->  4.819 seconds
+   55,286 taxa ->  9.995 seconds
+  110,572 taxa -> 20.852 seconds
+     
+Balanced trees:
+      512 taxa ->   0.054 seconds
+    1,024 taxa ->   0.129 seconds
+    2,048 taxa ->   0.247 seconds
+    4,096 taxa ->   0.539 seconds
+    8,192 taxa ->   1.102 seconds
+   16,384 taxa ->   2.296 seconds
+   32,768 taxa ->   4.716 seconds
+   65,536 taxa ->   9.835 seconds
+  131,072 taxa ->  20.669 seconds
+  262,144 taxa ->  45.797 seconds
+  524,288 taxa -> 108.121 seconds
 
 
 ################################################################################
